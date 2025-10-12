@@ -95,10 +95,21 @@ if 'current_test_index' not in st.session_state:
 if 'test_results' not in st.session_state:
     st.session_state.test_results = []
 
-# Google OAuth Configuration
-GOOGLE_CLIENT_ID = st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
-GOOGLE_CLIENT_SECRET = st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
-GOOGLE_REDIRECT_URI = st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+# Google OAuth Configuration - will be read in functions
+def get_google_config():
+    """Get Google OAuth configuration from secrets"""
+    try:
+        return {
+            'client_id': st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id')),
+            'client_secret': st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret')),
+            'redirect_uri': st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+        }
+    except:
+        return {
+            'client_id': 'your-google-client-id',
+            'client_secret': 'your-google-client-secret', 
+            'redirect_uri': 'https://your-app.streamlit.app/'
+        }
 
 # Allowed email domains
 ALLOWED_DOMAINS = ['gmail.com', 'googlemail.com', 'google.com', 'sarvam.ai']
@@ -136,8 +147,10 @@ def show_login_page():
     """, unsafe_allow_html=True)
     
     # Google OAuth Login
-    if GOOGLE_CLIENT_ID != 'your-google-client-id':
-        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={GOOGLE_CLIENT_ID}&redirect_uri={GOOGLE_REDIRECT_URI}&scope=openid%20email%20profile&response_type=code"
+    config = get_google_config()
+    
+    if config['client_id'] != 'your-google-client-id':
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={config['client_id']}&redirect_uri={config['redirect_uri']}&scope=openid%20email%20profile&response_type=code"
         
         st.markdown(f"""
         <div style="text-align: center;">
@@ -160,15 +173,16 @@ def handle_oauth_callback():
     
     if 'code' in query_params:
         code = query_params['code']
+        config = get_google_config()
         
         # Exchange code for token
         token_url = 'https://oauth2.googleapis.com/token'
         token_data = {
-            'client_id': GOOGLE_CLIENT_ID,
-            'client_secret': GOOGLE_CLIENT_SECRET,
+            'client_id': config['client_id'],
+            'client_secret': config['client_secret'],
             'code': code,
             'grant_type': 'authorization_code',
-            'redirect_uri': GOOGLE_REDIRECT_URI
+            'redirect_uri': config['redirect_uri']
         }
         
         try:
