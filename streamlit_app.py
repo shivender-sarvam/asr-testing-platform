@@ -96,8 +96,8 @@ if 'test_results' not in st.session_state:
     st.session_state.test_results = []
 
 # Google OAuth Configuration
-GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_ID', 'your-google-client-id')
-GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_SECRET', 'your-google-client-secret')
+GOOGLE_CLIENT_ID = st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
+GOOGLE_CLIENT_SECRET = st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
 GOOGLE_REDIRECT_URI = st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
 
 # Allowed email domains
