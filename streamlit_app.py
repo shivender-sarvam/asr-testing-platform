@@ -99,12 +99,22 @@ if 'test_results' not in st.session_state:
 def get_google_config():
     """Get Google OAuth configuration from secrets"""
     try:
+        # Debug: Show what secrets are available
+        st.write("🔍 Debug - Available secrets keys:", list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else "No secrets")
+        
+        client_id = st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
+        client_secret = st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
+        redirect_uri = st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+        
+        st.write(f"🔍 Debug - Client ID: {client_id[:10]}..." if client_id != 'your-google-client-id' else "🔍 Debug - Client ID: NOT SET")
+        
         return {
-            'client_id': st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id')),
-            'client_secret': st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret')),
-            'redirect_uri': st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': redirect_uri
         }
-    except:
+    except Exception as e:
+        st.write(f"🔍 Debug - Error reading secrets: {e}")
         return {
             'client_id': 'your-google-client-id',
             'client_secret': 'your-google-client-secret', 
