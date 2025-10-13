@@ -102,9 +102,17 @@ def get_google_config():
         # Debug: Show what secrets are available
         st.write("🔍 Debug - Available secrets keys:", list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else "No secrets")
         
-        client_id = st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
-        client_secret = st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
-        redirect_uri = st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+        # Try different ways to access secrets
+        if hasattr(st.secrets, 'secrets'):
+            # Nested secrets structure
+            client_id = st.secrets.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
+            client_secret = st.secrets.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
+            redirect_uri = st.secrets.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+        else:
+            # Direct access
+            client_id = st.secrets.get('GOOGLE_ID', os.environ.get('GOOGLE_ID', 'your-google-client-id'))
+            client_secret = st.secrets.get('GOOGLE_SECRET', os.environ.get('GOOGLE_SECRET', 'your-google-client-secret'))
+            redirect_uri = st.secrets.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
         
         st.write(f"🔍 Debug - Client ID: {client_id[:10]}..." if client_id != 'your-google-client-id' else "🔍 Debug - Client ID: NOT SET")
         
