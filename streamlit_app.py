@@ -677,7 +677,7 @@ def show_testing_interface():
                             // Find the Streamlit text input and update it
                             // Use multiple attempts to find the input
                             function updateStreamlitInput() {{
-                                const inputKey = 'audio_base64_{recording_key}';
+                                const inputKey = 'audio_base64_' + key;
                                 let input = null;
                                 
                                 // Try to find by key attribute
