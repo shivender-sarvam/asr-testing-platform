@@ -99,30 +99,22 @@ if 'test_results' not in st.session_state:
 def get_google_config():
     """Get Google OAuth configuration from secrets"""
     try:
-        # Debug: Show what secrets are available
-        st.write("🔍 Debug - Available secrets keys:", list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else "No secrets")
-        
         # Try to access secrets directly
         try:
             client_id = st.secrets['GOOGLE_ID']
             client_secret = st.secrets['GOOGLE_SECRET'] 
             redirect_uri = st.secrets['GOOGLE_REDIRECT_URI']
-            st.write("🔍 Debug - Direct secrets access worked")
         except:
             # Try nested access
             try:
                 client_id = st.secrets.secrets['GOOGLE_ID']
                 client_secret = st.secrets.secrets['GOOGLE_SECRET']
                 redirect_uri = st.secrets.secrets['GOOGLE_REDIRECT_URI']
-                st.write("🔍 Debug - Nested secrets access worked")
             except:
                 # Use environment variables as fallback
                 client_id = os.environ.get('GOOGLE_ID', 'your-google-client-id')
                 client_secret = os.environ.get('GOOGLE_SECRET', 'your-google-client-secret')
                 redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
-                st.write("🔍 Debug - Using environment variables")
-        
-        st.write(f"🔍 Debug - Client ID: {client_id[:10]}..." if client_id != 'your-google-client-id' else "🔍 Debug - Client ID: NOT SET")
         
         return {
             'client_id': client_id,
@@ -130,7 +122,6 @@ def get_google_config():
             'redirect_uri': redirect_uri
         }
     except Exception as e:
-        st.write(f"🔍 Debug - Error reading secrets: {e}")
         return {
             'client_id': 'your-google-client-id',
             'client_secret': 'your-google-client-secret', 
@@ -318,18 +309,35 @@ def show_csv_upload():
     st.header("📁 Step 3: Upload CSV or Start Testing")
     
     st.markdown("Upload a CSV file with crop data in the format: `serial_number,crop_code,crop_name,language,project`")
+    st.info("💡 **Tip:** Column names can be flexible (e.g., 'crop name', 'Crop Name', 'crop_name' all work)")
     
     uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
     
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
-            st.success("CSV loaded successfully!")
+            
+            # Normalize column names (handle variations)
+            df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('-', '_')
+            
+            # Filter by selected language if language column exists
+            if 'language' in df.columns:
+                df = df[df['language'].str.lower() == st.session_state.selected_language.lower()]
+                if df.empty:
+                    st.warning(f"No crops found for language: {st.session_state.selected_language}")
+                else:
+                    st.success(f"Found {len(df)} crops for {st.session_state.selected_language}!")
+            else:
+                st.success(f"CSV loaded successfully! Found {len(df)} crops.")
+            
             st.dataframe(df.head())
             
             if st.button("Start Testing", type="primary"):
-                st.session_state.test_data = df.to_dict('records')
-                st.rerun()
+                if not df.empty:
+                    st.session_state.test_data = df.to_dict('records')
+                    st.rerun()
+                else:
+                    st.error("No data to test. Please check your CSV file.")
         except Exception as e:
             st.error(f"Error reading CSV: {str(e)}")
     
@@ -350,8 +358,13 @@ def show_testing_interface():
     if st.session_state.current_test_index < len(st.session_state.test_data):
         current_crop = st.session_state.test_data[st.session_state.current_test_index]
         
-        st.header(f"🎤 Testing: {current_crop['name']}")
-        st.markdown(f"**Crop Code:** {current_crop['code']} | **Language:** {current_crop['language'].title()}")
+        # Handle different column name formats
+        crop_name = current_crop.get('crop_name') or current_crop.get('name', 'Unknown')
+        crop_code = current_crop.get('crop_code') or current_crop.get('code', 'N/A')
+        language = current_crop.get('language', st.session_state.selected_language or 'en')
+        
+        st.header(f"🎤 Testing: {crop_name}")
+        st.markdown(f"**Crop Code:** {crop_code} | **Language:** {language.title() if isinstance(language, str) else language}")
         
         # Progress
         progress = (st.session_state.current_test_index + 1) / len(st.session_state.test_data)
@@ -359,7 +372,7 @@ def show_testing_interface():
         st.markdown(f"**Progress:** {st.session_state.current_test_index + 1} of {len(st.session_state.test_data)}")
         
         # Test sentence
-        test_sentence = f"Please say {current_crop['name']}"
+        test_sentence = f"Please say {crop_name}"
         st.markdown(f"**Say this sentence:** \"{test_sentence}\"")
         
         # Recording interface
@@ -390,10 +403,12 @@ def show_testing_interface():
             if st.button("✅ Complete Test", type="primary"):
                 # Simulate test completion
                 result = {
-                    "crop_name": current_crop['name'],
-                    "crop_code": current_crop['code'],
+                    "qa_name": st.session_state.qa_name,
+                    "crop_name": crop_name,
+                    "crop_code": crop_code,
+                    "language": language,
                     "expected": test_sentence,
-                    "actual": f"Recorded audio for {current_crop['name']}",
+                    "actual": f"Recorded audio for {crop_name}",
                     "accuracy": 95.0,
                     "timestamp": datetime.now().isoformat()
                 }
