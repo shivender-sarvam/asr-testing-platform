@@ -909,89 +909,19 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Check for audio_key in URL query params (from JavaScript)
-        audio_key_from_url = st.query_params.get('audio_key')
+        # Hidden input for JavaScript to populate with base64 audio (DIRECT METHOD)
         audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64 = None
+        audio_base64 = st.text_input(
+            "Audio Data",
+            key=audio_base64_key,
+            label_visibility="collapsed",
+            value=st.session_state.get(audio_base64_key, ""),
+            help="Hidden input for audio from JavaScript"
+        )
         
-        # Method 1: Read from URL query param (token-based approach)
-        if audio_key_from_url:
-            # Inject JavaScript to read from sessionStorage using the key
-            read_audio_js = f"""
-            <script>
-                (function() {{
-                    const storageKey = '{audio_key_from_url}';
-                    const audioData = sessionStorage.getItem(storageKey);
-                    
-                    if (audioData) {{
-                        console.log('✅ Found audio in sessionStorage:', storageKey);
-                        // Store in a hidden input that Streamlit can read
-                        const inputKey = '{audio_base64_key}';
-                        const inputs = document.querySelectorAll('input[type="text"]');
-                        
-                        for (let input of inputs) {{
-                            const inputId = (input.id || '').toLowerCase();
-                            const inputName = (input.name || '').toLowerCase();
-                            
-                            if (inputId.includes(inputKey.toLowerCase()) || 
-                                inputName.includes(inputKey.toLowerCase()) ||
-                                (input.value === '' && input.offsetParent !== null)) {{
-                                
-                                input.value = audioData;
-                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                
-                                // Clear from storage
-                                sessionStorage.removeItem(storageKey);
-                                
-                                // Clear URL param
-                                const url = new URL(window.location);
-                                url.searchParams.delete('audio_key');
-                                window.history.replaceState({{}}, '', url);
-                                
-                                console.log('✅ Audio data set in input, triggering rerun...');
-                                
-                                // Trigger Streamlit rerun
-                                setTimeout(() => {{
-                                    window.location.reload();
-                                }}, 100);
-                                
-                                break;
-                            }}
-                        }}
-                    }} else {{
-                        console.warn('⚠️ Audio not found in sessionStorage:', storageKey);
-                    }}
-                }})();
-            </script>
-            """
-            components.html(read_audio_js, height=0)
-            # Give JS time to populate, then read from session state
-            if audio_key_from_url in st.session_state:
-                audio_base64 = st.session_state[audio_key_from_url]
-            else:
-                # Wait for next rerun
-                st.rerun()
-        
-        # Method 2: Read from hidden input (fallback)
-        if not audio_base64:
-            audio_base64 = st.text_input(
-                "Audio Data",
-                key=audio_base64_key,
-                label_visibility="collapsed",
-                value=st.session_state.get(audio_base64_key, ""),
-                help="Hidden input for audio from JavaScript"
-            )
-        
-        # Store in session state
+        # Store in session state when received
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
-            # Also store with the URL key if present
-            if audio_key_from_url:
-                st.session_state[audio_key_from_url] = audio_base64
-            # Clear URL param after reading
-            if audio_key_from_url:
-                st.query_params.pop('audio_key', None)
         
         # Auto-process when audio is received - IMMEDIATE PROCESSING (EXACT FLASK WORKFLOW)
         # Process ASR immediately when audio is detected (no separate submit button needed)
