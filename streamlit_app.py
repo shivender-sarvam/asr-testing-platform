@@ -137,7 +137,7 @@ def get_google_config():
 ALLOWED_DOMAINS = ['gmail.com', 'googlemail.com', 'google.com', 'sarvam.ai']
 
 # Sarvam ASR API Configuration
-SARVAM_API_URL = "http://103.207.148.23/saaras_v2_6/audio/transcriptions"
+SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
 BCP47_CODES = {
     "en": "en-IN",
     "hi": "hi-IN",
@@ -151,7 +151,7 @@ BCP47_CODES = {
     "pa": "pa-IN"
 }
 
-def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/webm'):
+def call_sarvam_asr(audio_bytes, language_code, api_key=None):
     """
     Call Sarvam ASR API to transcribe audio
     
@@ -159,7 +159,6 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/w
         audio_bytes: Audio file bytes
         language_code: Language code (e.g., 'hi', 'en')
         api_key: Sarvam API key (from secrets or env)
-        mime_type: MIME type of audio (e.g., 'audio/webm', 'audio/wav')
     
     Returns:
         str: Transcribed text or None if error
@@ -167,33 +166,18 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/w
     try:
         # Get API key from secrets or environment
         if not api_key:
-            try:
-                api_key = st.secrets.get('SARVAM_API_KEY', '')
-            except:
-                api_key = os.environ.get('SARVAM_API_KEY', '')
+            api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
         
         if not api_key:
-            st.error("❌ Sarvam API key not configured. Please add SARVAM_API_KEY to Streamlit secrets.")
+            st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
             return None
         
         # Get BCP47 language code
         bcp47_lang = BCP47_CODES.get(language_code.lower(), "hi-IN")
         
-        # Determine file extension and content type
-        if 'webm' in mime_type.lower():
-            filename = 'audio.webm'
-            content_type = 'audio/webm'
-        elif 'wav' in mime_type.lower():
-            filename = 'audio.wav'
-            content_type = 'audio/wav'
-        else:
-            # Default to webm
-            filename = 'audio.webm'
-            content_type = 'audio/webm'
-        
         # Prepare request
         files = {
-            'file': (filename, audio_bytes, content_type)
+            'file': ('audio.wav', audio_bytes, 'audio/wav')
         }
         
         data = {
@@ -205,79 +189,58 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/w
             'api-subscription-key': api_key
         }
         
-        # Debug info
-        st.info(f"🔍 Calling ASR API: {SARVAM_API_URL}, Language: {bcp47_lang}, Audio size: {len(audio_bytes)} bytes")
-        
         # Make API call
         response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
         
-        # Debug response
-        st.info(f"🔍 API Response Status: {response.status_code}")
-        
         if response.status_code == 200:
             result = response.json()
-            st.info(f"🔍 API Response: {result}")
-            # Try different possible response formats
-            transcript = (result.get('transcript') or 
-                         result.get('text') or 
-                         result.get('transcription') or
-                         '').strip()
-            if transcript:
-                st.success(f"✅ ASR Transcript: {transcript}")
+            transcript = result.get('transcript', result.get('text', '')).strip()
             return transcript
         else:
-            error_msg = f"Sarvam API error: {response.status_code}"
-            try:
-                error_detail = response.json()
-                error_msg += f" - {error_detail}"
-            except:
-                error_msg += f" - {response.text[:200]}"
-            st.error(error_msg)
+            st.error(f"Sarvam API error: {response.status_code}")
             return None
             
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ ASR API request failed: {str(e)}")
-        return None
     except Exception as e:
-        st.error(f"❌ ASR API call failed: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
+        st.warning(f"⚠️ ASR API call failed: {str(e)}. Using mock transcription.")
         return None
 
-def check_match(expected_text, actual_text):
+def calculate_accuracy(expected_text, actual_text):
     """
-    Check if ASR transcription matches the expected crop name
+    Calculate accuracy by comparing expected crop name with ASR transcription
     
     Args:
         expected_text: Expected crop name (e.g., "Wheat")
         actual_text: ASR transcription result
     
     Returns:
-        bool: True if match, False if no match
+        float: Accuracy percentage (0-100)
     """
     if not actual_text:
-        return False
+        return 0.0
     
-    # Normalize both texts (lowercase, remove extra spaces and punctuation)
+    # Normalize both texts (lowercase, remove extra spaces)
     expected_clean = re.sub(r'[^\w\s]', '', expected_text.lower().strip())
     actual_clean = re.sub(r'[^\w\s]', '', actual_text.lower().strip())
     
     # Exact match
     if expected_clean == actual_clean:
-        return True
+        return 100.0
     
     # Check if expected word is in the transcription
     if expected_clean in actual_clean:
-        return True
+        return 95.0  # High accuracy if crop name found in transcription
     
     # Check if transcription contains key parts of expected word
     expected_words = expected_clean.split()
-    for word in expected_words:
-        if word in actual_clean:
-            return True
+    actual_words = actual_clean.split()
+    
+    matches = sum(1 for word in expected_words if word in actual_clean)
+    if matches > 0:
+        # Partial match - calculate based on word matches
+        return (matches / len(expected_words)) * 90.0
     
     # No match
-    return False
+    return 0.0
 
 def check_authentication():
     """Check if user is authenticated"""
@@ -671,7 +634,8 @@ def show_testing_interface():
                             const base64Audio = reader.result;
                             
                             // Find the hidden text input and set its value
-                            const inputId = 'audio_base64_' + key;
+                            // Streamlit will read this on next rerun
+                            const inputId = 'audio_base64_{recording_key}';
                             const input = window.parent.document.querySelector('input[data-testid*="' + inputId + '"]') ||
                                          window.parent.document.querySelector('input[aria-label*="Audio Data"]') ||
                                          window.parent.document.querySelector('input[type="text"]');
@@ -719,113 +683,39 @@ def show_testing_interface():
             }});
         }})();
         </script>
-        """
-        # Replace placeholder with actual recording key
-        audio_recorder_html = audio_recorder_html_template.replace('PLACEHOLDER_KEY', recording_key)
+        """.format(recording_key=recording_key)
+        
+        # Add a hidden text input to receive base64 audio from JavaScript
+        audio_base64 = st.text_input(
+            "Audio Data (hidden)",
+            key=f"audio_base64_{recording_key}",
+            label_visibility="collapsed"
+        )
         
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Add a hidden text input to receive base64 audio from JavaScript
-        # This will be populated automatically when recording stops
-        audio_base64 = st.text_input(
-            "Audio Data (hidden)",
-            key=f"audio_base64_{recording_key}",
-            label_visibility="collapsed",
-            value=""
-        )
-        
-        # Debug: Show if audio was received
-        if audio_base64:
-            st.caption(f"🔍 Audio received: {len(audio_base64)} chars")
-        else:
-            st.caption("🔍 Waiting for audio...")
-        
-        # Convert base64 to bytes if audio was recorded and process ASR automatically
-        asr_result_key = f"asr_result_{recording_key}"
-        asr_processed_key = f"asr_processed_{recording_key}"
-        
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+        # Convert base64 to bytes if audio was recorded
+        if audio_base64 and audio_base64.startswith('data:audio'):
             try:
-                # Extract base64 part and detect format
-                if ',' in audio_base64:
-                    mime_type = audio_base64.split(',')[0].split(':')[1].split(';')[0]
-                    base64_data = audio_base64.split(',')[1]
-                else:
-                    mime_type = 'audio/webm'  # Default
-                    base64_data = audio_base64
-                
+                # Extract base64 part after comma
+                base64_data = audio_base64.split(',')[1]
                 audio_bytes = base64.b64decode(base64_data)
                 st.session_state.recorded_audio = audio_bytes
-                st.session_state[f'audio_mime_{recording_key}'] = mime_type
-                
-                # Automatically process ASR if not already processed
-                if not st.session_state.get(asr_processed_key, False):
-                    st.info(f"🔄 Audio captured! Size: {len(audio_bytes)} bytes, Format: {mime_type}")
-                    with st.spinner("🔄 Processing audio with ASR..."):
-                        try:
-                            asr_transcript = call_sarvam_asr(
-                                audio_bytes,
-                                language,
-                                st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                                mime_type=mime_type
-                            )
-                            
-                            if asr_transcript:
-                                matches = check_match(crop_name, asr_transcript)
-                                st.session_state[asr_result_key] = {
-                                    'transcript': asr_transcript,
-                                    'matches': matches
-                                }
-                                st.success(f"✅ ASR processed: '{asr_transcript}'")
-                            else:
-                                st.session_state[asr_result_key] = {
-                                    'transcript': None,
-                                    'matches': False
-                                }
-                                st.warning("⚠️ ASR returned no transcript. Check API key and response.")
-                        except Exception as e:
-                            st.error(f"❌ ASR processing error: {str(e)}")
-                            st.session_state[asr_result_key] = {
-                                'transcript': None,
-                                'matches': False
-                            }
-                        
-                        st.session_state[asr_processed_key] = True
-                        st.rerun()
             except Exception as e:
                 st.error(f"Error processing audio: {e}")
         
-        # Display status and ASR results
+        # Display status
         if st.session_state.recorded_audio:
-            st.success("✅ Audio recorded!")
+            st.success("✅ Audio recorded! Ready for processing.")
             st.markdown("### 🔊 Listen to Your Recording")
             st.audio(st.session_state.recorded_audio, format="audio/webm")
             
-            # Show ASR results if available
-            if st.session_state.get(asr_result_key):
-                result = st.session_state[asr_result_key]
-                st.markdown("---")
-                st.markdown("### 🎯 ASR Results")
-                
-                if result['transcript']:
-                    st.markdown(f"**Transcribed:** {result['transcript']}")
-                    st.markdown(f"**Expected:** {crop_name}")
-                    
-                    if result['matches']:
-                        st.success("✅ **MATCH!**")
-                    else:
-                        st.error("❌ **NO MATCH**")
-                else:
-                    st.error("❌ ASR processing failed. Please check your API key.")
-            
             if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
                 st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
                 st.rerun()
         else:
-            st.info("🎤 Click 'Start Recording' above. ASR results will appear automatically after you stop recording.")
+            st.info("🎤 Click 'Start Recording' above. Audio will be automatically processed when you click 'Save & Next' or 'Finish Testing'.")
         
         # Navigation
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
@@ -844,20 +734,31 @@ def show_testing_interface():
         
         with col3:
             if st.button("✅ Save & Next"):
-                # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key) or {}
-                asr_transcript = asr_result_data.get('transcript', None) if isinstance(asr_result_data, dict) else None
-                matches = asr_result_data.get('matches', False) if isinstance(asr_result_data, dict) else False
+                # Process audio and calculate accuracy
+                asr_transcript = None
+                accuracy = 0.0
                 
-                if asr_transcript:
-                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
-                elif st.session_state.recorded_audio:
-                    asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    matches = False
+                if st.session_state.recorded_audio:
+                    # Call Sarvam ASR API
+                    with st.spinner("🔄 Processing audio with ASR..."):
+                        asr_transcript = call_sarvam_asr(
+                            audio_data,
+                            language,
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                        )
+                    
+                    if asr_transcript:
+                        # Calculate accuracy by comparing with expected crop name
+                        accuracy = calculate_accuracy(crop_name, asr_transcript)
+                        asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
+                    else:
+                        # Fallback if API fails
+                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed - check API key)"
+                        accuracy = 0.0
                 else:
-                    st.warning("⚠️ No audio recorded! Please record audio first.")
-                    asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    matches = False
+                    st.warning("⚠️ No audio uploaded! Accuracy will be 0%. Please upload audio for ASR processing.")
+                    asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
+                    accuracy = 0.0
                 
                 result = {
                     "qa_name": st.session_state.qa_name,
@@ -865,38 +766,46 @@ def show_testing_interface():
                     "crop_name": crop_name,
                     "crop_code": crop_code,
                     "language": language,
-                    "expected": crop_name,
-                    "transcript": asr_transcript if asr_transcript else "N/A",
+                    "expected": crop_name,  # Store just the crop name, not the full sentence
                     "actual": asr_transcript if asr_transcript else asr_result,
-                    "match": "Yes" if matches else "No",
+                    "accuracy": accuracy,
                     "timestamp": datetime.now().isoformat(),
                     "audio_recorded": st.session_state.recorded_audio is not None
                 }
                 st.session_state.test_results.append(result)
-                # Clear recorded audio and ASR results for next test
+                # Clear recorded audio for next test
                 st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
                 st.session_state.current_test_index += 1
                 st.success("✅ Test saved! Moving to next crop...")
                 st.rerun()
         
         with col4:
             if st.button("🏁 Finish Testing", type="primary"):
-                # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key) or {}
-                asr_transcript = asr_result_data.get('transcript', None) if isinstance(asr_result_data, dict) else None
-                matches = asr_result_data.get('matches', False) if isinstance(asr_result_data, dict) else False
+                # Process audio and calculate accuracy
+                asr_transcript = None
+                accuracy = 0.0
                 
-                if asr_transcript:
-                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
-                elif st.session_state.recorded_audio:
-                    asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    matches = False
+                if st.session_state.recorded_audio:
+                    # Call Sarvam ASR API
+                    with st.spinner("🔄 Processing audio with ASR..."):
+                        asr_transcript = call_sarvam_asr(
+                            audio_data,
+                            language,
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                        )
+                    
+                    if asr_transcript:
+                        # Calculate accuracy by comparing with expected crop name
+                        accuracy = calculate_accuracy(crop_name, asr_transcript)
+                        asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
+                    else:
+                        # Fallback if API fails
+                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed - check API key)"
+                        accuracy = 0.0
                 else:
-                    st.warning("⚠️ No audio recorded! Please record audio first.")
-                    asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    matches = False
+                    st.warning("⚠️ No audio uploaded! Accuracy will be 0%. Please upload audio for ASR processing.")
+                    asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
+                    accuracy = 0.0
                 
                 result = {
                     "qa_name": st.session_state.qa_name,
@@ -904,10 +813,9 @@ def show_testing_interface():
                     "crop_name": crop_name,
                     "crop_code": crop_code,
                     "language": language,
-                    "expected": crop_name,
-                    "transcript": asr_transcript if asr_transcript else "N/A",
+                    "expected": crop_name,  # Store just the crop name, not the full sentence
                     "actual": asr_transcript if asr_transcript else asr_result,
-                    "match": "Yes" if matches else "No",
+                    "accuracy": accuracy,
                     "timestamp": datetime.now().isoformat(),
                     "audio_recorded": st.session_state.recorded_audio is not None
                 }
@@ -915,8 +823,6 @@ def show_testing_interface():
                 # Jump to end to show results
                 st.session_state.current_test_index = len(st.session_state.test_data)
                 st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
                 st.success("✅ Testing session completed! Showing results...")
                 st.rerun()
     
@@ -926,10 +832,7 @@ def show_testing_interface():
         
         # Results summary
         st.markdown(f"**Total Tests:** {len(st.session_state.test_results)}")
-        if st.session_state.test_results:
-            # Count matches (handle both old 'accuracy' format and new 'match' format)
-            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('accuracy', 0) > 0))
-            st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
+        st.markdown(f"**Average Accuracy:** {sum(r['accuracy'] for r in st.session_state.test_results) / len(st.session_state.test_results):.1f}%")
         
         # Results table
         if st.session_state.test_results:
