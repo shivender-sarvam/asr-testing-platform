@@ -888,6 +888,11 @@ def show_testing_interface():
                             audio_segment.export(wav_buffer, format="wav")
                             audio_bytes = wav_buffer.getvalue()
                             audio_format = 'wav'
+                            st.success("✅ Converted webm to wav successfully!")
+                        except ImportError as e:
+                            st.error(f"❌ pydub not installed yet. Streamlit Cloud is still installing dependencies. Please wait 1-2 minutes and refresh.")
+                            st.info("💡 Check Streamlit Cloud dashboard: https://share.streamlit.io - look for 'Running' status")
+                            audio_format = 'webm'
                         except Exception as e:
                             st.warning(f"Could not convert webm to wav: {e}. Using original format.")
                             audio_format = 'webm'
