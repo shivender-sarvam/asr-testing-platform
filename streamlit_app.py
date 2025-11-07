@@ -889,14 +889,15 @@ def show_testing_interface():
                     st.session_state[audio_submitted_key] = True
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Error processing audio: {e}")
                     import traceback
-                    st.code(traceback.format_exc())
-                    # Store error in result
+                    error_traceback = traceback.format_exc()
+                    st.error(f"❌ Error processing audio: {e}")
+                    # Store full error details
                     st.session_state[f'asr_result_{recording_key}'] = {
                         'transcript': None,
                         'matches': False,
-                        'error': str(e)
+                        'error': str(e),
+                        'traceback': error_traceback
                     }
                     st.session_state[f'audio_processed_{recording_key}'] = True
                     st.session_state[audio_submitted_key] = True
@@ -1017,7 +1018,47 @@ def show_testing_interface():
                 # Show specific error if available
                 error_msg = result.get('error', 'Unknown error')
                 st.error(f"❌ ASR processing failed: {error_msg}")
-                st.info("💡 **Troubleshooting:**\n- Check if SARVAM_API_KEY is set in Streamlit Cloud secrets\n- Verify the API endpoint is accessible\n- Check browser console for detailed errors")
+                
+                # Show detailed error logs
+                with st.expander("📋 **Error Logs**", expanded=True):
+                    st.write("**Error Details:**")
+                    st.code(f"Error: {error_msg}", language='text')
+                    
+                    # Show full traceback if available
+                    if result.get('traceback'):
+                        st.write("**Full Traceback:**")
+                        st.code(result.get('traceback'), language='python')
+                    
+                    # Show API key status
+                    st.write("**API Key Status:**")
+                    try:
+                        api_key_check = st.secrets.get('SARVAM_API_KEY', 'NOT FOUND')
+                        if api_key_check == 'NOT FOUND':
+                            try:
+                                api_key_check = st.secrets.secrets.get('SARVAM_API_KEY', 'NOT FOUND')
+                            except:
+                                api_key_check = os.environ.get('SARVAM_API_KEY', 'NOT FOUND')
+                        
+                        if api_key_check != 'NOT FOUND':
+                            st.success(f"✅ API Key found: {api_key_check[:10]}...{api_key_check[-5:]}")
+                        else:
+                            st.error("❌ API Key NOT FOUND in secrets or environment")
+                            st.info("💡 Add SARVAM_API_KEY to Streamlit Cloud secrets")
+                    except Exception as e:
+                        st.error(f"❌ Error checking API key: {e}")
+                        import traceback
+                        st.code(traceback.format_exc(), language='python')
+                    
+                    # Show API configuration
+                    st.write("**API Configuration:**")
+                    st.code(f"URL: {SARVAM_API_URL}\nModel: {MODEL_NAME}\nLanguage: {language}\nBCP47 Code: {BCP47_CODES.get(language.lower(), 'hi-IN')}", language='text')
+                    
+                    # Show audio info
+                    if uploaded_audio:
+                        st.write("**Audio File Info:**")
+                        audio_size = len(audio_bytes) if 'audio_bytes' in locals() else 'N/A'
+                        st.code(f"Name: {uploaded_audio.name}\nSize: {audio_size} bytes\nType: {uploaded_audio.type}", language='text')
+                
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
                     keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
