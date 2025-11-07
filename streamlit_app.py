@@ -773,7 +773,7 @@ def show_testing_interface():
                                 const inputKey = 'audio_base64_' + key;
                                 const inputs = document.querySelectorAll('input[type="text"]');
                                 for (let inp of inputs) {{
-                                    if ((inp.id || '').includes(inputKey) {{
+                                    if ((inp.id || '').includes(inputKey)) {{
                                         inp.value = base64Audio;
                                         inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                         inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
