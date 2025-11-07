@@ -628,27 +628,43 @@ def show_testing_interface():
                         downloadLink.href = audioUrl;
                         playbackDiv.style.display = 'block';
                         
-                        // Automatically convert to base64 and send to Streamlit
+                        // Automatically convert to base64 and store for Streamlit
                         const reader = new FileReader();
                         reader.onloadend = function() {{
                             const base64Audio = reader.result;
                             
-                            // Find the hidden text input and set its value
-                            // Streamlit will read this on next rerun
-                            const inputId = 'audio_base64_{recording_key}';
-                            const input = window.parent.document.querySelector('input[data-testid*="' + inputId + '"]') ||
-                                         window.parent.document.querySelector('input[aria-label*="Audio Data"]') ||
-                                         window.parent.document.querySelector('input[type="text"]');
+                            // Store in window object for Streamlit to access
+                            window['audioData_' + key] = base64Audio;
                             
-                            if (input) {{
-                                input.value = base64Audio;
-                                // Trigger input event so Streamlit detects the change
-                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            // Also store in sessionStorage as backup
+                            try {{
+                                sessionStorage.setItem('audio_' + key, base64Audio);
+                            }} catch(e) {{
+                                console.log('sessionStorage not available');
                             }}
                             
-                            // Also store in window for backup
-                            window['audioData_' + key] = base64Audio;
+                            // Try to update Streamlit input via postMessage
+                            if (window.parent && window.parent !== window) {{
+                                window.parent.postMessage({{
+                                    type: 'streamlit:setComponentValue',
+                                    key: key,
+                                    value: base64Audio
+                                }}, '*');
+                            }}
+                            
+                            // Also try direct DOM manipulation as fallback
+                            setTimeout(function() {{
+                                const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                for (let input of inputs) {{
+                                    if (input.value === '' || input.getAttribute('data-base-input') === 'true') {{
+                                        input.value = base64Audio;
+                                        input.setAttribute('data-base-input', 'true');
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        break;
+                                    }}
+                                }}
+                            }}, 100);
                         }};
                         reader.readAsDataURL(audioBlob);
                         
@@ -685,25 +701,33 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
-        # Add a hidden text input to receive base64 audio from JavaScript
-        audio_base64 = st.text_input(
-            "Audio Data (hidden)",
-            key=f"audio_base64_{recording_key}",
-            label_visibility="collapsed"
-        )
-        
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
+        # Add a hidden text input to receive base64 audio from JavaScript
+        # This will be populated automatically when recording stops
+        audio_base64 = st.text_input(
+            "Audio Data (hidden)",
+            key=f"audio_base64_{recording_key}",
+            label_visibility="collapsed",
+            value=""
+        )
+        
         # Convert base64 to bytes if audio was recorded
-        if audio_base64 and audio_base64.startswith('data:audio'):
+        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             try:
                 # Extract base64 part after comma
-                base64_data = audio_base64.split(',')[1]
+                if ',' in audio_base64:
+                    base64_data = audio_base64.split(',')[1]
+                else:
+                    base64_data = audio_base64
                 audio_bytes = base64.b64decode(base64_data)
                 st.session_state.recorded_audio = audio_bytes
             except Exception as e:
                 st.error(f"Error processing audio: {e}")
+        
+        # Also check sessionStorage via JavaScript on button click
+        # We'll handle this in the button click handler
         
         # Display status
         if st.session_state.recorded_audio:
@@ -734,6 +758,18 @@ def show_testing_interface():
         
         with col3:
             if st.button("✅ Save & Next"):
+                # Check if we need to get audio from JavaScript storage
+                if not st.session_state.recorded_audio and audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+                    try:
+                        if ',' in audio_base64:
+                            base64_data = audio_base64.split(',')[1]
+                        else:
+                            base64_data = audio_base64
+                        audio_bytes = base64.b64decode(base64_data)
+                        st.session_state.recorded_audio = audio_bytes
+                    except:
+                        pass
+                
                 # Process audio and calculate accuracy
                 asr_transcript = None
                 accuracy = 0.0
@@ -781,6 +817,18 @@ def show_testing_interface():
         
         with col4:
             if st.button("🏁 Finish Testing", type="primary"):
+                # Check if we need to get audio from JavaScript storage
+                if not st.session_state.recorded_audio and audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+                    try:
+                        if ',' in audio_base64:
+                            base64_data = audio_base64.split(',')[1]
+                        else:
+                            base64_data = audio_base64
+                        audio_bytes = base64.b64decode(base64_data)
+                        st.session_state.recorded_audio = audio_bytes
+                    except:
+                        pass
+                
                 # Process audio and calculate accuracy
                 asr_transcript = None
                 accuracy = 0.0
