@@ -724,73 +724,111 @@ def show_testing_interface():
                                 let attempts = 0;
                                 const maxAttempts = 50;
                                 
+                                // Store in localStorage as backup
+                                try {{
+                                    localStorage.setItem('streamlit_audio_' + key, base64Audio);
+                                    console.log('Audio stored in localStorage');
+                                }} catch(e) {{
+                                    console.log('localStorage not available');
+                                }}
+                                
                                 function findAndUpdateInput() {{
                                     attempts++;
+                                    console.log('Attempt ' + attempts + ' to find input with key: ' + inputKey);
+                                    
                                     if (attempts > maxAttempts) {{
-                                        console.error('Could not find Streamlit input after ' + maxAttempts + ' attempts');
+                                        console.error('❌ Could not find Streamlit input after ' + maxAttempts + ' attempts');
+                                        alert('Audio recorded! Please refresh the page to process it.');
                                         return;
                                     }}
                                     
-                                    // Try to find input in parent document
-                                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                    console.log('Looking for input, found ' + inputs.length + ' text inputs');
+                                    // Try multiple methods to find the input
+                                    let inputs = [];
+                                    
+                                    // Method 1: All inputs in parent
+                                    if (window.parent && window.parent.document) {{
+                                        inputs = window.parent.document.querySelectorAll('input');
+                                        console.log('Method 1: Found ' + inputs.length + ' inputs in parent');
+                                    }}
+                                    
+                                    // Method 2: All inputs in top window
+                                    if (inputs.length === 0 && window.top && window.top.document) {{
+                                        inputs = window.top.document.querySelectorAll('input');
+                                        console.log('Method 2: Found ' + inputs.length + ' inputs in top window');
+                                    }}
+                                    
+                                    // Method 3: Try iframe content
+                                    if (inputs.length === 0) {{
+                                        const iframes = window.parent.document.querySelectorAll('iframe');
+                                        console.log('Method 3: Found ' + iframes.length + ' iframes');
+                                        for (let iframe of iframes) {{
+                                            try {{
+                                                const iframeInputs = iframe.contentDocument.querySelectorAll('input');
+                                                inputs = Array.from(inputs).concat(Array.from(iframeInputs));
+                                            }} catch(e) {{
+                                                console.log('Cannot access iframe content (cross-origin)');
+                                            }}
+                                        }}
+                                    }}
+                                    
+                                    console.log('Total inputs found: ' + inputs.length);
                                     
                                     for (let input of inputs) {{
-                                        // Check if input is empty or matches our key
                                         const inputId = (input.id || '').toLowerCase();
                                         const inputName = (input.name || '').toLowerCase();
                                         const inputValue = input.value || '';
+                                        const inputKeyAttr = (input.getAttribute('data-base-input') || '').toLowerCase();
                                         
+                                        console.log('Checking input:', {{
+                                            id: inputId,
+                                            name: inputName,
+                                            valueLength: inputValue.length,
+                                            keyAttr: inputKeyAttr
+                                        }});
+                                        
+                                        // Check if this is our input
                                         if (inputId.includes(inputKey.toLowerCase()) || 
                                             inputName.includes(inputKey.toLowerCase()) ||
-                                            (inputValue === '' && attempts < 10)) {{
+                                            inputKeyAttr.includes(inputKey.toLowerCase()) ||
+                                            (inputValue === '' && attempts <= 5)) {{
                                             
-                                            console.log('Found input! Setting value...');
+                                            console.log('✅ FOUND INPUT! Setting value...');
                                             input.value = base64Audio;
+                                            input.setAttribute('data-base-input', inputKey);
+                                            
+                                            // Focus and blur to trigger events
                                             input.focus();
                                             input.blur();
                                             
-                                            // Trigger events
-                                            ['input', 'change', 'keyup', 'blur', 'focus'].forEach(eventType => {{
-                                                const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
-                                                input.dispatchEvent(event);
+                                            // Trigger all possible events
+                                            ['input', 'change', 'keyup', 'keydown', 'blur', 'focus', 'paste'].forEach(eventType => {{
+                                                try {{
+                                                    const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                                                    input.dispatchEvent(event);
+                                                }} catch(e) {{
+                                                    console.log('Event ' + eventType + ' failed');
+                                                }}
                                             }});
                                             
-                                            // Try to trigger Streamlit rerun by simulating user interaction
+                                            console.log('✅ Input value set to:', base64Audio.substring(0, 50) + '...');
+                                            
+                                            // Force Streamlit to notice - reload page
                                             setTimeout(() => {{
-                                                // Look for any button and click it to trigger rerun
-                                                const allButtons = window.parent.document.querySelectorAll('button');
-                                                console.log('Found ' + allButtons.length + ' buttons, looking for one to click...');
-                                                
-                                                // Try to find a button that might trigger rerun
-                                                for (let btn of allButtons) {{
-                                                    const btnText = (btn.textContent || '').toLowerCase();
-                                                    if (btnText.includes('rerun') || btnText.includes('update') || btn.getAttribute('data-testid')) {{
-                                                        console.log('Clicking button to trigger rerun');
-                                                        btn.click();
-                                                        break;
-                                                    }}
-                                                }}
-                                                
-                                                // Also try location.reload as last resort
-                                                setTimeout(() => {{
-                                                    if (input.value === base64Audio) {{
-                                                        console.log('Input value set, triggering page reload to update Streamlit');
-                                                        window.parent.location.reload();
-                                                    }}
-                                                }}, 500);
-                                            }}, 200);
+                                                console.log('🔄 Reloading page to update Streamlit...');
+                                                window.parent.location.reload();
+                                            }}, 300);
                                             
                                             return;
                                         }}
                                     }}
                                     
-                                    // Retry
-                                    setTimeout(findAndUpdateInput, 100);
+                                    // Retry with exponential backoff
+                                    const delay = Math.min(100 * attempts, 1000);
+                                    setTimeout(findAndUpdateInput, delay);
                                 }}
                                 
-                                // Start looking for input
-                                setTimeout(findAndUpdateInput, 100);
+                                // Start looking immediately
+                                findAndUpdateInput();
                             }}
                         }};
                         reader.readAsDataURL(audioBlob);
@@ -832,13 +870,19 @@ def show_testing_interface():
         components.html(audio_recorder_html, height=300)
         
         # Hidden text input for JavaScript to populate with base64 audio
+        # Make it easier for JavaScript to find by using a unique key
+        audio_base64_key = f"audio_base64_{recording_key}"
         audio_base64 = st.text_input(
             "Audio Data",
-            key=f"audio_base64_{recording_key}",
+            key=audio_base64_key,
             label_visibility="collapsed",
-            value="",
+            value=st.session_state.get(audio_base64_key, ""),
             help="Hidden input for audio data"
         )
+        
+        # Store in session state so it persists
+        if audio_base64:
+            st.session_state[audio_base64_key] = audio_base64
         
         # Auto-process when audio_base64 is received
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
