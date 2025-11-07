@@ -136,8 +136,9 @@ def get_google_config():
 # Allowed email domains
 ALLOWED_DOMAINS = ['gmail.com', 'googlemail.com', 'google.com', 'sarvam.ai']
 
-# Sarvam ASR API Configuration
-SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
+# Saaras API Configuration (matching Flask/Render version)
+SARVAM_API_URL = "http://103.207.148.23/saaras_v2_6/audio/transcriptions"
+MODEL_NAME = "/models/saaras-raft-wp20-base-v2v-v2-chunk_5-main-bs64/1-gpu"
 BCP47_CODES = {
     "en": "en-IN",
     "hi": "hi-IN",
@@ -181,7 +182,7 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         }
         
         data = {
-            'model': 'saarika:v2.5',
+            'model': MODEL_NAME,
             'language_code': bcp47_lang
         }
         
