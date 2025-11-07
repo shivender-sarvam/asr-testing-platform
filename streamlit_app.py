@@ -644,8 +644,8 @@ def show_testing_interface():
                 console.log('Audio recorder initialized for key:', key);
                 
                 startBtn.addEventListener('click', async function() {{
-                console.log('Start button clicked');
-                try {{
+                    console.log('Start button clicked');
+                    try {{
                     const stream = await navigator.mediaDevices.getUserMedia({{
                         audio: {{
                             sampleRate: 16000,
@@ -751,14 +751,14 @@ def show_testing_interface():
                     stopBtn.style.cursor = 'pointer';
                     statusDiv.style.display = 'block';
                     
-                }} catch (error) {{
-                    alert('Error accessing microphone: ' + error.message);
-                }}
+                    }} catch (error) {{
+                        alert('Error accessing microphone: ' + error.message);
+                    }}
                 }});
                 
                 stopBtn.addEventListener('click', function() {{
-                console.log('Stop button clicked');
-                if (mediaRecorder && mediaRecorder.state === 'recording') {{
+                    console.log('Stop button clicked');
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {{
                     mediaRecorder.stop();
                     startBtn.disabled = false;
                     startBtn.style.opacity = '1';
@@ -766,8 +766,8 @@ def show_testing_interface():
                     stopBtn.disabled = true;
                     stopBtn.style.opacity = '0.5';
                     stopBtn.style.cursor = 'not-allowed';
-                    if (statusDiv) statusDiv.style.display = 'none';
-                }}
+                        if (statusDiv) statusDiv.style.display = 'none';
+                    }}
                 }});
             }}
             
