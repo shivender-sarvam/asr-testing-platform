@@ -236,25 +236,73 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     st.success(f"✅ ASR Success: '{transcript}'")
                     return transcript
                 else:
-                    # API returned 200 but no transcript - store full response for debugging
-                    st.error(f"❌ API returned 200 but no transcript in response")
+                    # API returned 200 but no transcript - DEBUG HEAVILY
+                    import json
                     
-                    # Show what fields ARE in the response
+                    # Show what fields ARE in the response (IMMEDIATELY VISIBLE)
                     available_fields = list(result.keys()) if isinstance(result, dict) else 'Not a dict'
-                    st.warning(f"📋 Available fields in response: {available_fields}")
                     
-                    # Try to find transcript in other possible field names
-                    possible_transcript_fields = ['transcript', 'text', 'transcription', 'result', 'output', 'data', 'content']
+                    # Show full response IMMEDIATELY (not hidden)
+                    st.error(f"❌ API returned 200 but no transcript in response")
+                    st.markdown("### 🔍 **DEBUG INFO (IMMEDIATELY VISIBLE)**")
+                    
+                    with st.expander("📋 **Full API Response**", expanded=True):
+                        st.json(result)
+                    
+                    st.warning(f"📋 **Available fields in response:** `{available_fields}`")
+                    
+                    # Try to find transcript in other possible field names (check nested too)
+                    possible_transcript_fields = ['transcript', 'text', 'transcription', 'result', 'output', 'data', 'content', 'message', 'transcribed_text', 'asr_result']
                     found_transcript = None
+                    found_field = None
+                    
+                    # Check top-level fields
                     for field in possible_transcript_fields:
                         if field in result and result[field]:
-                            found_transcript = result[field]
-                            st.info(f"✅ Found transcript in field '{field}': {found_transcript}")
-                            break
+                            value = result[field]
+                            # If it's a string, use it
+                            if isinstance(value, str) and value.strip():
+                                found_transcript = value
+                                found_field = field
+                                break
+                            # If it's a dict, check nested fields
+                            elif isinstance(value, dict):
+                                for nested_field in possible_transcript_fields:
+                                    if nested_field in value and value[nested_field]:
+                                        found_transcript = value[nested_field]
+                                        found_field = f"{field}.{nested_field}"
+                                        break
+                                if found_transcript:
+                                    break
                     
-                    # Show full response
-                    import json
-                    st.code(f"Full response JSON:\n{json.dumps(result, indent=2)}", language='json')
+                    # Also check ALL string values in the response
+                    if not found_transcript:
+                        def find_text_in_dict(d, path=""):
+                            """Recursively find any string values that might be transcript"""
+                            for k, v in d.items():
+                                current_path = f"{path}.{k}" if path else k
+                                if isinstance(v, str) and len(v.strip()) > 0:
+                                    # If it looks like a transcript (has letters/words)
+                                    if any(c.isalpha() for c in v) and len(v.strip()) > 2:
+                                        return v, current_path
+                                elif isinstance(v, dict):
+                                    result = find_text_in_dict(v, current_path)
+                                    if result:
+                                        return result
+                            return None
+                        
+                        text_result = find_text_in_dict(result)
+                        if text_result:
+                            found_transcript, found_field = text_result
+                    
+                    if found_transcript:
+                        st.success(f"✅ **Found transcript in field `{found_field}`:** `{found_transcript}`")
+                        transcript = str(found_transcript).strip()
+                        if transcript:
+                            st.balloons()
+                            return transcript
+                    else:
+                        st.error("❌ **No transcript found in any field!** Check the JSON above.")
                     
                     # Store in session state for error logs
                     if hasattr(st, 'session_state'):
@@ -264,13 +312,6 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                             'available_fields': available_fields,
                             'error': 'No transcript in response'
                         }
-                    
-                    # If we found transcript in another field, use it
-                    if found_transcript:
-                        transcript = str(found_transcript).strip()
-                        if transcript:
-                            st.success(f"✅ ASR Success (found in alternate field): '{transcript}'")
-                            return transcript
                     
                     return None
             except Exception as json_error:
