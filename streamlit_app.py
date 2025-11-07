@@ -164,17 +164,35 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
     Returns:
         str: Transcribed text or None if error
     """
+    # DEBUG: Show that function was called
+    st.info("🔍 DEBUG: ASR function called")
+    
     try:
         # Get API key from secrets or environment
         if not api_key:
-            api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
+            try:
+                api_key = st.secrets.get('SARVAM_API_KEY', '')
+            except:
+                try:
+                    api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                except:
+                    api_key = os.environ.get('SARVAM_API_KEY', '')
         
-        if not api_key:
+        # DEBUG: Check API key status (without exposing actual key)
+        if api_key:
+            st.info(f"✅ DEBUG: API key found (length: {len(api_key)} chars)")
+        else:
+            st.error("❌ DEBUG: API key NOT found! Check Streamlit secrets.")
             st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
             return None
         
         # Get BCP47 language code
         bcp47_lang = BCP47_CODES.get(language_code.lower(), "hi-IN")
+        st.info(f"🔍 DEBUG: Language code: {language_code} → BCP47: {bcp47_lang}")
+        
+        # DEBUG: Show audio data info
+        audio_size = len(audio_bytes)
+        st.info(f"🔍 DEBUG: Audio size: {audio_size} bytes ({audio_size/1024:.2f} KB)")
         
         # Prepare request
         files = {
@@ -190,19 +208,50 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
             'api-subscription-key': api_key
         }
         
+        # DEBUG: Show request details
+        st.info(f"🔍 DEBUG: API URL: {SARVAM_API_URL}")
+        st.info(f"🔍 DEBUG: Model: {MODEL_NAME}")
+        st.info(f"🔍 DEBUG: Request headers: api-subscription-key present: {bool(headers.get('api-subscription-key'))}")
+        
         # Make API call
+        st.info("🚀 DEBUG: Making API request...")
         response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
         
+        # DEBUG: Show response details
+        st.info(f"🔍 DEBUG: Response status code: {response.status_code}")
+        st.info(f"🔍 DEBUG: Response headers: {dict(response.headers)}")
+        
         if response.status_code == 200:
-            result = response.json()
-            transcript = result.get('transcript', result.get('text', '')).strip()
-            return transcript
+            try:
+                result = response.json()
+                st.info(f"🔍 DEBUG: Response JSON: {result}")
+                transcript = result.get('transcript', result.get('text', '')).strip()
+                st.success(f"✅ DEBUG: Transcript received: '{transcript}'")
+                return transcript
+            except Exception as json_error:
+                st.error(f"❌ DEBUG: Failed to parse JSON response: {json_error}")
+                st.info(f"🔍 DEBUG: Raw response text: {response.text[:500]}")
+                return None
         else:
-            st.error(f"Sarvam API error: {response.status_code}")
+            st.error(f"❌ DEBUG: API returned error status: {response.status_code}")
+            try:
+                error_body = response.json()
+                st.error(f"❌ DEBUG: Error response: {error_body}")
+            except:
+                st.error(f"❌ DEBUG: Error response text: {response.text[:500]}")
             return None
             
+    except requests.exceptions.Timeout:
+        st.error("❌ DEBUG: API request TIMEOUT (30s exceeded)")
+        return None
+    except requests.exceptions.ConnectionError as conn_error:
+        st.error(f"❌ DEBUG: Connection error: {str(conn_error)}")
+        st.error("❌ DEBUG: Could not connect to API. Check if URL is correct.")
+        return None
     except Exception as e:
-        st.warning(f"⚠️ ASR API call failed: {str(e)}. Using mock transcription.")
+        st.error(f"❌ DEBUG: Exception occurred: {type(e).__name__}: {str(e)}")
+        import traceback
+        st.error(f"❌ DEBUG: Full traceback:\n{traceback.format_exc()}")
         return None
 
 def check_match(expected_text, actual_text):
@@ -715,15 +764,26 @@ def show_testing_interface():
         asr_result_key = f"asr_result_{recording_key}"
         asr_processed_key = f"asr_processed_{recording_key}"
         
+        # DEBUG: Check if audio_base64 is received
+        if audio_base64:
+            st.info(f"🔍 DEBUG: Audio base64 received! Length: {len(audio_base64)} chars")
+            st.info(f"🔍 DEBUG: Audio base64 starts with: {audio_base64[:50]}...")
+        else:
+            st.info("🔍 DEBUG: No audio base64 data yet. Record audio to see it here.")
+        
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             try:
+                st.info("🔍 DEBUG: Processing audio base64...")
                 # Extract base64 part after comma
                 if ',' in audio_base64:
                     base64_data = audio_base64.split(',')[1]
+                    st.info(f"🔍 DEBUG: Extracted base64 data length: {len(base64_data)} chars")
                 else:
                     base64_data = audio_base64
                 audio_bytes = base64.b64decode(base64_data)
+                st.info(f"🔍 DEBUG: Decoded audio bytes: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
                 st.session_state.recorded_audio = audio_bytes
+                st.success("✅ DEBUG: Audio successfully decoded and stored!")
                 
                 # Automatically process ASR if not already processed
                 if not st.session_state.get(asr_processed_key, False):
