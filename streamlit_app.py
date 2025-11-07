@@ -123,7 +123,11 @@ def get_google_config():
                 # Use environment variables as fallback
                 client_id = os.environ.get('GOOGLE_ID', 'your-google-client-id')
                 client_secret = os.environ.get('GOOGLE_SECRET', 'your-google-client-secret')
-                redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI', 'https://your-app.streamlit.app/')
+                # Use localhost for local testing, Streamlit Cloud URL for production
+                if 'localhost' in os.environ.get('STREAMLIT_SERVER_URL', '') or '127.0.0.1' in os.environ.get('STREAMLIT_SERVER_URL', ''):
+                    redirect_uri = 'http://localhost:8501/'
+                else:
+                    redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI', st.secrets.get('GOOGLE_REDIRECT_URI', 'https://asr-testing-platform.streamlit.app/'))
         
         return {
             'client_id': client_id,
@@ -134,7 +138,7 @@ def get_google_config():
         return {
             'client_id': 'your-google-client-id',
             'client_secret': 'your-google-client-secret', 
-            'redirect_uri': 'https://your-app.streamlit.app/'
+            'redirect_uri': redirect_uri
         }
 
 # Allowed email domains
