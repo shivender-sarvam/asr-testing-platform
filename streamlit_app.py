@@ -665,43 +665,65 @@ def show_testing_interface():
                         downloadLink.href = audioUrl;
                         playbackDiv.style.display = 'block';
                         
-                        // Automatically convert to base64 and store for Streamlit
+                        // Automatically convert to base64 and send to Streamlit
                         const reader = new FileReader();
                         reader.onloadend = function() {{
                             const base64Audio = reader.result;
                             
-                            // Store in window object for Streamlit to access
+                            // Store in window for debugging
                             window['audioData_' + key] = base64Audio;
+                            console.log('Audio converted to base64, length:', base64Audio.length);
                             
-                            // Also store in sessionStorage as backup
-                            try {{
-                                sessionStorage.setItem('audio_' + key, base64Audio);
-                            }} catch(e) {{
-                                console.log('sessionStorage not available');
-                            }}
-                            
-                            // Try to update Streamlit input via postMessage
-                            if (window.parent && window.parent !== window) {{
-                                window.parent.postMessage({{
-                                    type: 'streamlit:setComponentValue',
-                                    key: key,
-                                    value: base64Audio
-                                }}, '*');
-                            }}
-                            
-                            // Also try direct DOM manipulation as fallback
-                            setTimeout(function() {{
-                                const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                for (let input of inputs) {{
-                                    if (input.value === '' || input.getAttribute('data-base-input') === 'true') {{
-                                        input.value = base64Audio;
-                                        input.setAttribute('data-base-input', 'true');
-                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            // Find the Streamlit text input and update it
+                            // Use multiple attempts to find the input
+                            function updateStreamlitInput() {{
+                                const inputKey = 'audio_base64_{recording_key}';
+                                let input = null;
+                                
+                                // Try to find by key attribute
+                                const allInputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                for (let inp of allInputs) {{
+                                    const testId = inp.getAttribute('data-testid') || '';
+                                    const ariaLabel = inp.getAttribute('aria-label') || '';
+                                    if (testId.includes(inputKey) || ariaLabel.includes('Audio Data')) {{
+                                        input = inp;
                                         break;
                                     }}
                                 }}
-                            }}, 100);
+                                
+                                // If not found, try the last empty input
+                                if (!input) {{
+                                    for (let inp of allInputs) {{
+                                        if (inp.value === '' || inp.value.length < 100) {{
+                                            input = inp;
+                                            break;
+                                        }}
+                                    }}
+                                }
+                                
+                                if (input) {{
+                                    input.value = base64Audio;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    console.log('Audio data sent to Streamlit input');
+                                    
+                                    // Trigger Streamlit rerun by clicking a button or triggering change
+                                    setTimeout(function() {{
+                                        // Try to trigger rerun by dispatching a custom event
+                                        window.parent.postMessage({{
+                                            type: 'streamlit:setComponentValue',
+                                            value: base64Audio
+                                        }}, '*');
+                                    }}, 100);
+                                }} else {{
+                                    console.error('Could not find Streamlit input to update');
+                                }}
+                            }};
+                            
+                            // Try immediately and also after a delay
+                            updateStreamlitInput();
+                            setTimeout(updateStreamlitInput, 200);
+                            setTimeout(updateStreamlitInput, 500);
                         }};
                         reader.readAsDataURL(audioBlob);
                         
@@ -750,6 +772,12 @@ def show_testing_interface():
             value=""
         )
         
+        # Debug: Show if audio was received
+        if audio_base64:
+            st.caption(f"🔍 Audio received: {len(audio_base64)} chars")
+        else:
+            st.caption("🔍 Waiting for audio...")
+        
         # Convert base64 to bytes if audio was recorded and process ASR automatically
         asr_result_key = f"asr_result_{recording_key}"
         asr_processed_key = f"asr_processed_{recording_key}"
@@ -770,21 +798,31 @@ def show_testing_interface():
                 
                 # Automatically process ASR if not already processed
                 if not st.session_state.get(asr_processed_key, False):
+                    st.info(f"🔄 Audio captured! Size: {len(audio_bytes)} bytes, Format: {mime_type}")
                     with st.spinner("🔄 Processing audio with ASR..."):
-                        asr_transcript = call_sarvam_asr(
-                            audio_bytes,
-                            language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                            mime_type=mime_type
-                        )
-                        
-                        if asr_transcript:
-                            matches = check_match(crop_name, asr_transcript)
-                            st.session_state[asr_result_key] = {
-                                'transcript': asr_transcript,
-                                'matches': matches
-                            }
-                        else:
+                        try:
+                            asr_transcript = call_sarvam_asr(
+                                audio_bytes,
+                                language,
+                                st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                                mime_type=mime_type
+                            )
+                            
+                            if asr_transcript:
+                                matches = check_match(crop_name, asr_transcript)
+                                st.session_state[asr_result_key] = {
+                                    'transcript': asr_transcript,
+                                    'matches': matches
+                                }
+                                st.success(f"✅ ASR processed: '{asr_transcript}'")
+                            else:
+                                st.session_state[asr_result_key] = {
+                                    'transcript': None,
+                                    'matches': False
+                                }
+                                st.warning("⚠️ ASR returned no transcript. Check API key and response.")
+                        except Exception as e:
+                            st.error(f"❌ ASR processing error: {str(e)}")
                             st.session_state[asr_result_key] = {
                                 'transcript': None,
                                 'matches': False
@@ -865,6 +903,7 @@ def show_testing_interface():
                     "crop_code": crop_code,
                     "language": language,
                     "expected": crop_name,
+                    "transcript": asr_transcript if asr_transcript else "N/A",
                     "actual": asr_transcript if asr_transcript else asr_result,
                     "match": "Yes" if matches else "No",
                     "timestamp": datetime.now().isoformat(),
@@ -903,6 +942,7 @@ def show_testing_interface():
                     "crop_code": crop_code,
                     "language": language,
                     "expected": crop_name,
+                    "transcript": asr_transcript if asr_transcript else "N/A",
                     "actual": asr_transcript if asr_transcript else asr_result,
                     "match": "Yes" if matches else "No",
                     "timestamp": datetime.now().isoformat(),
