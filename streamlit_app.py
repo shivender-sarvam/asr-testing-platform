@@ -195,7 +195,7 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     api_key = os.environ.get('SARVAM_API_KEY', '')
         
         if not api_key:
-            st.warning("⚠️ Sarvam API key not configured.")
+            st.error("❌ SARVAM_API_KEY not found. Check Streamlit Cloud secrets.")
             return None
         
         # Get BCP47 language code
@@ -218,6 +218,9 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
             'api-subscription-key': api_key
         }
         
+        # Debug logging
+        st.info(f"🔍 Calling ASR API: {SARVAM_API_URL}, Model: {MODEL_NAME}, Language: {bcp47_lang}, Format: {audio_format}")
+        
         # Make API call
         response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
         
@@ -225,17 +228,20 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
             try:
                 result = response.json()
                 transcript = result.get('transcript', result.get('text', '')).strip()
+                if transcript:
+                    st.success(f"✅ ASR Success: '{transcript}'")
                 return transcript
             except Exception as json_error:
-                st.error(f"Failed to parse API response: {json_error}")
+                st.error(f"❌ Failed to parse API response: {json_error}")
+                st.code(f"Response: {response.text[:500]}")
                 return None
         else:
-            st.error(f"API error: {response.status_code}")
+            st.error(f"❌ API error: {response.status_code}")
             try:
                 error_body = response.json()
-                st.error(f"Error: {error_body}")
+                st.error(f"Error details: {error_body}")
             except:
-                st.error(f"Error: {response.text[:200]}")
+                st.error(f"Error text: {response.text[:500]}")
             return None
             
     except requests.exceptions.Timeout:
