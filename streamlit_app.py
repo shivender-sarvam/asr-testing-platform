@@ -284,9 +284,10 @@ def show_login_page():
         st.write(f"Client ID length: {len(config['client_id'])}")
     
     if config['client_id'] != 'your-google-client-id' and config['client_id']:
-        # URL encode the redirect URI
-        redirect_uri_encoded = urlencode({'': config['redirect_uri']})[1:] if config['redirect_uri'] else ''
-        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={config['client_id']}&redirect_uri={config['redirect_uri']}&scope=openid%20email%20profile&response_type=code"
+        # URL encode the redirect URI properly
+        from urllib.parse import quote
+        redirect_uri_encoded = quote(config['redirect_uri'], safe='')
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={config['client_id']}&redirect_uri={redirect_uri_encoded}&scope=openid%20email%20profile&response_type=code"
         
         st.markdown(f"""
         <div style="text-align: center;">
