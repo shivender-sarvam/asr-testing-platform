@@ -623,15 +623,28 @@ def show_testing_interface():
             <div id="playback-{recording_key}" style="margin: 20px 0; display: none;">
                 <p style="color: #28a745; font-weight: bold;">✅ Recording completed! Listen to your recording:</p>
                 <audio id="audioPlayer-{recording_key}" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
-                <a id="downloadLink-{recording_key}" download="recording.wav" style="
-                    display: inline-block;
-                    background: #28a745;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    text-decoration: none;
-                    margin: 10px;
-                ">📥 Download Recording</a>
+                <div style="margin: 15px 0;">
+                    <button id="submitBtn-{recording_key}" style="
+                        background: #007bff;
+                        color: white;
+                        border: none;
+                        padding: 12px 25px;
+                        font-size: 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        margin: 5px;
+                    ">📤 Submit Recording</button>
+                    <button id="recordAgainBtn-{recording_key}" style="
+                        background: #6c757d;
+                        color: white;
+                        border: none;
+                        padding: 12px 25px;
+                        font-size: 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        margin: 5px;
+                    ">🔄 Record Again</button>
+                </div>
             </div>
         </div>
         
@@ -647,7 +660,8 @@ def show_testing_interface():
             const statusDiv = document.getElementById('status-' + key);
             const playbackDiv = document.getElementById('playback-' + key);
             const audioPlayer = document.getElementById('audioPlayer-' + key);
-            const downloadLink = document.getElementById('downloadLink-' + key);
+            const submitBtn = document.getElementById('submitBtn-' + key);
+            const recordAgainBtn = document.getElementById('recordAgainBtn-' + key);
             
             startBtn.addEventListener('click', async function() {{
                 try {{
@@ -678,163 +692,111 @@ def show_testing_interface():
                         audioBlob = new Blob(audioChunks, {{ type: mimeType }});
                         const audioUrl = URL.createObjectURL(audioBlob);
                         audioPlayer.src = audioUrl;
-                        downloadLink.href = audioUrl;
                         playbackDiv.style.display = 'block';
                         
-                        // Automatically convert to base64 and store for Streamlit
-                        const reader = new FileReader();
-                        reader.onloadend = function() {{
-                            const base64Audio = reader.result;
-                            
-                            // Store in window object for Streamlit to access
-                            window['audioData_' + key] = base64Audio;
-                            
-                            // Also store in sessionStorage as backup
-                            try {{
-                                sessionStorage.setItem('audio_' + key, base64Audio);
-                            }} catch(e) {{
-                                console.log('sessionStorage not available');
-                            }}
-                            
-                            // Try to update Streamlit input via postMessage
-                            if (window.parent && window.parent !== window) {{
-                                window.parent.postMessage({{
-                                    type: 'streamlit:setComponentValue',
-                                    key: key,
-                                    value: base64Audio
-                                }}, '*');
-                            }}
-                            
-                            // Store in a global variable that Streamlit can access
-                            window.streamlitAudioData = window.streamlitAudioData || {{}};
-                            window.streamlitAudioData[key] = base64Audio;
-                            console.log('Audio stored in window.streamlitAudioData[' + key + ']');
-                            
-                            // Send to Streamlit using postMessage API
-                            // Streamlit components can receive messages via window.addEventListener
-                            if (window.parent && window.parent !== window) {{
-                                // Try Streamlit's component communication
-                                window.parent.postMessage({{
-                                    type: 'streamlit:setFrameHeight',
-                                    height: 300
-                                }}, '*');
-                                
-                                // Also try to find and update the input directly
-                                const inputKey = 'audio_base64_' + key;
-                                let attempts = 0;
-                                const maxAttempts = 50;
-                                
-                                // Store in localStorage as backup
-                                try {{
-                                    localStorage.setItem('streamlit_audio_' + key, base64Audio);
-                                    console.log('Audio stored in localStorage');
-                                }} catch(e) {{
-                                    console.log('localStorage not available');
-                                }}
-                                
-                                function findAndUpdateInput() {{
-                                    attempts++;
-                                    console.log('Attempt ' + attempts + ' to find input with key: ' + inputKey);
-                                    
-                                    if (attempts > maxAttempts) {{
-                                        console.error('❌ Could not find Streamlit input after ' + maxAttempts + ' attempts');
-                                        alert('Audio recorded! Please refresh the page to process it.');
-                                        return;
-                                    }}
-                                    
-                                    // Try multiple methods to find the input
-                                    let inputs = [];
-                                    
-                                    // Method 1: All inputs in parent
-                                    if (window.parent && window.parent.document) {{
-                                        inputs = window.parent.document.querySelectorAll('input');
-                                        console.log('Method 1: Found ' + inputs.length + ' inputs in parent');
-                                    }}
-                                    
-                                    // Method 2: All inputs in top window
-                                    if (inputs.length === 0 && window.top && window.top.document) {{
-                                        inputs = window.top.document.querySelectorAll('input');
-                                        console.log('Method 2: Found ' + inputs.length + ' inputs in top window');
-                                    }}
-                                    
-                                    // Method 3: Try iframe content
-                                    if (inputs.length === 0) {{
-                                        const iframes = window.parent.document.querySelectorAll('iframe');
-                                        console.log('Method 3: Found ' + iframes.length + ' iframes');
-                                        for (let iframe of iframes) {{
-                                            try {{
-                                                const iframeInputs = iframe.contentDocument.querySelectorAll('input');
-                                                inputs = Array.from(inputs).concat(Array.from(iframeInputs));
-                                            }} catch(e) {{
-                                                console.log('Cannot access iframe content (cross-origin)');
-                                            }}
-                                        }}
-                                    }}
-                                    
-                                    console.log('Total inputs found: ' + inputs.length);
-                                    
-                                    for (let input of inputs) {{
-                                        const inputId = (input.id || '').toLowerCase();
-                                        const inputName = (input.name || '').toLowerCase();
-                                        const inputValue = input.value || '';
-                                        const inputKeyAttr = (input.getAttribute('data-base-input') || '').toLowerCase();
-                                        
-                                        console.log('Checking input:', {{
-                                            id: inputId,
-                                            name: inputName,
-                                            valueLength: inputValue.length,
-                                            keyAttr: inputKeyAttr
-                                        }});
-                                        
-                                        // Check if this is our input
-                                        if (inputId.includes(inputKey.toLowerCase()) || 
-                                            inputName.includes(inputKey.toLowerCase()) ||
-                                            inputKeyAttr.includes(inputKey.toLowerCase()) ||
-                                            (inputValue === '' && attempts <= 5)) {{
-                                            
-                                            console.log('✅ FOUND INPUT! Setting value...');
-                                            input.value = base64Audio;
-                                            input.setAttribute('data-base-input', inputKey);
-                                            
-                                            // Focus and blur to trigger events
-                                            input.focus();
-                                            input.blur();
-                                            
-                                            // Trigger all possible events
-                                            ['input', 'change', 'keyup', 'keydown', 'blur', 'focus', 'paste'].forEach(eventType => {{
-                                                try {{
-                                                    const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
-                                                    input.dispatchEvent(event);
-                                                }} catch(e) {{
-                                                    console.log('Event ' + eventType + ' failed');
-                                                }}
-                                            }});
-                                            
-                                            console.log('✅ Input value set to:', base64Audio.substring(0, 50) + '...');
-                                            
-                                            // Force Streamlit to notice - reload page
-                                            setTimeout(() => {{
-                                                console.log('🔄 Reloading page to update Streamlit...');
-                                                window.parent.location.reload();
-                                            }}, 300);
-                                            
-                                            return;
-                                        }}
-                                    }}
-                                    
-                                    // Retry with exponential backoff
-                                    const delay = Math.min(100 * attempts, 1000);
-                                    setTimeout(findAndUpdateInput, delay);
-                                }}
-                                
-                                // Start looking immediately
-                                findAndUpdateInput();
-                            }}
-                        }};
-                        reader.readAsDataURL(audioBlob);
+                        // Store audio blob globally for submit button
+                        window['audioBlob_' + key] = audioBlob;
+                        console.log('Audio blob stored, ready for submission');
                         
                         stream.getTracks().forEach(track => track.stop());
                     }};
+                    
+                    // Submit button handler - matches Flask version
+                    submitBtn.addEventListener('click', async function() {{
+                        if (!audioBlob) {{
+                            alert('No recording to submit');
+                            return;
+                        }}
+                        
+                        submitBtn.disabled = true;
+                        submitBtn.textContent = '⏳ Processing...';
+                        
+                        // Convert to base64
+                        const reader = new FileReader();
+                        reader.onloadend = function() {{
+                            const base64Audio = reader.result;
+                            console.log('Converting audio to base64 for Streamlit...');
+                            
+                            // Store in localStorage
+                            try {{
+                                localStorage.setItem('streamlit_audio_' + key, base64Audio);
+                                console.log('✅ Audio stored in localStorage');
+                            }} catch(e) {{
+                                console.log('localStorage not available');
+                            }}
+                            
+                            // Find and update Streamlit input
+                            const inputKey = 'audio_base64_' + key;
+                            let attempts = 0;
+                            const maxAttempts = 30;
+                            
+                            function updateInput() {{
+                                attempts++;
+                                console.log('Attempt ' + attempts + ': Looking for input ' + inputKey);
+                                
+                                if (attempts > maxAttempts) {{
+                                    console.error('❌ Could not find input after ' + maxAttempts + ' attempts');
+                                    alert('Could not send audio to Streamlit. Please refresh the page.');
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = '📤 Submit Recording';
+                                    return;
+                                }}
+                                
+                                // Find input in parent document
+                                let inputs = [];
+                                if (window.parent && window.parent.document) {{
+                                    inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                }}
+                                
+                                console.log('Found ' + inputs.length + ' text inputs');
+                                
+                                for (let input of inputs) {{
+                                    const inputId = (input.id || '').toLowerCase();
+                                    const inputName = (input.name || '').toLowerCase();
+                                    const inputValue = input.value || '';
+                                    
+                                    // Check if this is our input (empty or matches key)
+                                    if (inputId.includes(inputKey.toLowerCase()) || 
+                                        inputName.includes(inputKey.toLowerCase()) ||
+                                        (inputValue === '' && attempts <= 5)) {{
+                                        
+                                        console.log('✅ FOUND INPUT! Setting value...');
+                                        input.value = base64Audio;
+                                        input.setAttribute('data-audio-submitted', 'true');
+                                        
+                                        // Trigger events
+                                        ['input', 'change'].forEach(eventType => {{
+                                            input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
+                                        }});
+                                        
+                                        console.log('✅ Value set! Reloading page...');
+                                        
+                                        // Reload to trigger Streamlit processing
+                                        setTimeout(() => {{
+                                            window.parent.location.reload();
+                                        }}, 200);
+                                        
+                                        return;
+                                    }}
+                                }}
+                                
+                                // Retry
+                                setTimeout(updateInput, 150);
+                            }};
+                            
+                            updateInput();
+                        }};
+                        reader.readAsDataURL(audioBlob);
+                    }});
+                    
+                    // Record again button
+                    recordAgainBtn.addEventListener('click', function() {{
+                        playbackDiv.style.display = 'none';
+                        audioBlob = null;
+                        audioChunks = [];
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                    }});
                     
                     mediaRecorder.start(100);
                     startBtn.disabled = true;
