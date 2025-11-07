@@ -219,10 +219,14 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
         }
         
         # Debug logging
-        st.info(f"🔍 Calling ASR API: {SARVAM_API_URL}, Model: {MODEL_NAME}, Language: {bcp47_lang}, Format: {audio_format}")
+        st.info(f"🔍 Calling ASR API:\n- URL: {SARVAM_API_URL}\n- Model: {MODEL_NAME}\n- Language: {bcp47_lang}\n- Format: {audio_format}\n- Audio size: {len(audio_bytes)} bytes\n- API Key: {'✅ Set' if api_key else '❌ Missing'}")
         
         # Make API call
-        response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
+        try:
+            response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
+        except Exception as req_error:
+            st.error(f"❌ Request failed: {req_error}")
+            return None
         
         if response.status_code == 200:
             try:
@@ -853,7 +857,16 @@ def show_testing_interface():
                             audio_format = 'webm'
                     
                     # Call ASR API (like Flask)
-                    api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                    # Get API key - try multiple methods
+                    api_key = None
+                    try:
+                        api_key = st.secrets.get('SARVAM_API_KEY', '')
+                    except:
+                        try:
+                            api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                        except:
+                            api_key = os.environ.get('SARVAM_API_KEY', '')
+                    
                     if not api_key:
                         st.error("❌ SARVAM_API_KEY not found in secrets. Please configure it in Streamlit Cloud secrets.")
                         st.session_state[f'asr_result_{recording_key}'] = {
@@ -862,10 +875,11 @@ def show_testing_interface():
                             'error': 'API key not configured'
                         }
                     else:
+                        # Call ASR with the key
                         asr_transcript = call_sarvam_asr(
                             audio_bytes,
                             language,
-                            api_key,
+                            api_key,  # Pass the key we found
                             audio_format=audio_format
                         )
                         
@@ -877,11 +891,11 @@ def show_testing_interface():
                                 'matches': matches
                             }
                         else:
-                            # ASR failed - store error
+                            # ASR failed - store error (call_sarvam_asr will show the actual error)
                             st.session_state[f'asr_result_{recording_key}'] = {
                                 'transcript': None,
                                 'matches': False,
-                                'error': 'ASR API returned no transcript'
+                                'error': 'ASR API returned no transcript - check error messages above'
                             }
                     
                     # Mark as processed (even if failed, so we don't retry infinitely)
