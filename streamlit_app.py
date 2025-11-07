@@ -238,14 +238,40 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 else:
                     # API returned 200 but no transcript - store full response for debugging
                     st.error(f"❌ API returned 200 but no transcript in response")
-                    st.code(f"Full response: {result}", language='json')
+                    
+                    # Show what fields ARE in the response
+                    available_fields = list(result.keys()) if isinstance(result, dict) else 'Not a dict'
+                    st.warning(f"📋 Available fields in response: {available_fields}")
+                    
+                    # Try to find transcript in other possible field names
+                    possible_transcript_fields = ['transcript', 'text', 'transcription', 'result', 'output', 'data', 'content']
+                    found_transcript = None
+                    for field in possible_transcript_fields:
+                        if field in result and result[field]:
+                            found_transcript = result[field]
+                            st.info(f"✅ Found transcript in field '{field}': {found_transcript}")
+                            break
+                    
+                    # Show full response
+                    import json
+                    st.code(f"Full response JSON:\n{json.dumps(result, indent=2)}", language='json')
+                    
                     # Store in session state for error logs
                     if hasattr(st, 'session_state'):
                         st.session_state['_last_api_response'] = {
                             'status_code': 200,
                             'response': result,
+                            'available_fields': available_fields,
                             'error': 'No transcript in response'
                         }
+                    
+                    # If we found transcript in another field, use it
+                    if found_transcript:
+                        transcript = str(found_transcript).strip()
+                        if transcript:
+                            st.success(f"✅ ASR Success (found in alternate field): '{transcript}'")
+                            return transcript
+                    
                     return None
             except Exception as json_error:
                 st.error(f"❌ Failed to parse API response: {json_error}")
@@ -878,24 +904,33 @@ def show_testing_interface():
                 try:
                     # Determine audio format
                     audio_format = 'wav'
+                    conversion_status = "Not needed (already WAV)"
+                    
                     if uploaded_audio.name.endswith('.webm'):
                         try:
                             from pydub import AudioSegment
                             import io
+                            st.info("🔄 Attempting to convert webm to wav...")
                             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
                             audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
                             wav_buffer = io.BytesIO()
                             audio_segment.export(wav_buffer, format="wav")
                             audio_bytes = wav_buffer.getvalue()
                             audio_format = 'wav'
+                            conversion_status = "✅ Successfully converted webm → wav"
                             st.success("✅ Converted webm to wav successfully!")
                         except ImportError as e:
                             st.error(f"❌ pydub not installed yet. Streamlit Cloud is still installing dependencies. Please wait 1-2 minutes and refresh.")
                             st.info("💡 Check Streamlit Cloud dashboard: https://share.streamlit.io - look for 'Running' status")
                             audio_format = 'webm'
+                            conversion_status = f"❌ pydub not installed: {e}"
                         except Exception as e:
                             st.warning(f"Could not convert webm to wav: {e}. Using original format.")
                             audio_format = 'webm'
+                            conversion_status = f"⚠️ Conversion failed: {e}"
+                    
+                    # Store conversion status for debugging
+                    st.session_state[f'_conversion_status_{recording_key}'] = conversion_status
                     
                     # Store audio format for error logs
                     st.session_state[f'_audio_format_{recording_key}'] = audio_format
@@ -1125,7 +1160,18 @@ def show_testing_interface():
                     if st.session_state.get('_last_api_response'):
                         st.write("**Actual API Response:**")
                         api_resp = st.session_state['_last_api_response']
-                        st.code(f"Status: {api_resp.get('status_code', 'N/A')}\nError: {api_resp.get('error', 'N/A')}\nResponse: {api_resp.get('response', api_resp.get('raw_response', 'N/A'))}", language='json')
+                        import json
+                        response_data = api_resp.get('response', api_resp.get('raw_response', 'N/A'))
+                        
+                        # Format response nicely
+                        if isinstance(response_data, dict):
+                            response_str = json.dumps(response_data, indent=2)
+                        elif isinstance(response_data, str):
+                            response_str = response_data
+                        else:
+                            response_str = str(response_data)
+                        
+                        st.code(f"Status Code: {api_resp.get('status_code', 'N/A')}\nError: {api_resp.get('error', 'N/A')}\nAvailable Fields: {api_resp.get('available_fields', 'N/A')}\n\nFull Response:\n{response_str}", language='json')
                 
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
