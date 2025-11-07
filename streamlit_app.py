@@ -802,17 +802,18 @@ def show_testing_interface():
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
         
-        # Show playback if audio is stored
-        if st.session_state.get(f'audio_stored_{recording_key}', False):
+        # Show playback if audio is stored (but not yet submitted)
+        if st.session_state.get(f'audio_stored_{recording_key}', False) and not st.session_state.get(audio_submitted_key, False):
             audio_bytes = st.session_state.get(f'audio_bytes_{recording_key}')
             if audio_bytes:
                 st.success("✅ Recording completed! Listen to your recording:")
                 st.audio(audio_bytes, format="audio/webm")
                 
-                # Submit button - matches Flask version
+                # Submit button - matches Flask version (ONLY show if not submitted yet)
+                st.markdown("---")
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("📤 Submit Recording", type="primary", key=f"submit_{recording_key}"):
+                    if st.button("📤 Submit Recording", type="primary", key=f"submit_{recording_key}", use_container_width=True):
                         # Process ASR when submit is clicked
                         with st.spinner("🔄 Processing audio with ASR..."):
                             audio_format = st.session_state.get(f'audio_format_{recording_key}', 'wav')
@@ -839,7 +840,7 @@ def show_testing_interface():
                             st.rerun()
                 
                 with col2:
-                    if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
+                    if st.button("🔄 Record Again", key=f"rerecord_{recording_key}", use_container_width=True):
                         # Clear all state for this recording
                         for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
                                    f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
