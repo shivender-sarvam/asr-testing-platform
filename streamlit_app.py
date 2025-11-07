@@ -621,12 +621,36 @@ def show_testing_interface():
                         }}
                     }};
                     
-                    mediaRecorder.onstop = function() {{
+                    mediaRecorder.onstop = async function() {{
                         audioBlob = new Blob(audioChunks, {{ type: mimeType }});
                         const audioUrl = URL.createObjectURL(audioBlob);
                         audioPlayer.src = audioUrl;
                         downloadLink.href = audioUrl;
                         playbackDiv.style.display = 'block';
+                        
+                        // Automatically convert to base64 and send to Streamlit
+                        const reader = new FileReader();
+                        reader.onloadend = function() {{
+                            const base64Audio = reader.result;
+                            
+                            // Find the hidden text input and set its value
+                            // Streamlit will read this on next rerun
+                            const inputId = 'audio_base64_{recording_key}';
+                            const input = window.parent.document.querySelector('input[data-testid*="' + inputId + '"]') ||
+                                         window.parent.document.querySelector('input[aria-label*="Audio Data"]') ||
+                                         window.parent.document.querySelector('input[type="text"]');
+                            
+                            if (input) {{
+                                input.value = base64Audio;
+                                // Trigger input event so Streamlit detects the change
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                            
+                            // Also store in window for backup
+                            window['audioData_' + key] = base64Audio;
+                        }};
+                        reader.readAsDataURL(audioBlob);
                         
                         stream.getTracks().forEach(track => track.stop());
                     }};
@@ -661,37 +685,37 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
+        # Add a hidden text input to receive base64 audio from JavaScript
+        audio_base64 = st.text_input(
+            "Audio Data (hidden)",
+            key=f"audio_base64_{recording_key}",
+            label_visibility="collapsed"
+        )
+        
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # File uploader for audio (REQUIRED for ASR processing)
-        st.markdown("---")
-        st.markdown("### 📤 Upload Your Recorded Audio (Required for ASR)")
-        st.warning("⚠️ **Important:** After recording above, you MUST download the audio file and upload it here for ASR processing and accuracy calculation!")
-        st.info("💡 **Steps:** 1) Record audio using buttons above → 2) Click 'Download Recording' → 3) Upload the downloaded file here → 4) Click 'Save & Next' or 'Finish Testing'")
+        # Convert base64 to bytes if audio was recorded
+        if audio_base64 and audio_base64.startswith('data:audio'):
+            try:
+                # Extract base64 part after comma
+                base64_data = audio_base64.split(',')[1]
+                audio_bytes = base64.b64decode(base64_data)
+                st.session_state.recorded_audio = audio_bytes
+            except Exception as e:
+                st.error(f"Error processing audio: {e}")
         
-        uploaded_audio = st.file_uploader(
-            "📁 Upload Audio File (Required)",
-            type=['wav', 'mp3', 'webm', 'ogg', 'm4a'],
-            key=f"audio_upload_{recording_key}",
-            help="Record audio using the buttons above, then download and upload the file here for ASR processing"
-        )
-        
-        # Store and display uploaded audio
-        if uploaded_audio:
-            st.session_state.recorded_audio = uploaded_audio.read()
-            st.success("✅ Audio file uploaded! Ready for ASR processing.")
-            
-            # Display audio player
+        # Display status
+        if st.session_state.recorded_audio:
+            st.success("✅ Audio recorded! Ready for processing.")
             st.markdown("### 🔊 Listen to Your Recording")
-            st.audio(st.session_state.recorded_audio, format="audio/wav")
+            st.audio(st.session_state.recorded_audio, format="audio/webm")
             
-            # Option to record again
             if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
                 st.session_state.recorded_audio = None
                 st.rerun()
         else:
-            st.error("❌ **No audio uploaded!** Please record and upload audio to get ASR results and accuracy scores.")
+            st.info("🎤 Click 'Start Recording' above. Audio will be automatically processed when you click 'Save & Next' or 'Finish Testing'.")
         
         # Navigation
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
@@ -718,7 +742,7 @@ def show_testing_interface():
                     # Call Sarvam ASR API
                     with st.spinner("🔄 Processing audio with ASR..."):
                         asr_transcript = call_sarvam_asr(
-                            st.session_state.recorded_audio,
+                            audio_data,
                             language,
                             st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
                         )
@@ -765,7 +789,7 @@ def show_testing_interface():
                     # Call Sarvam ASR API
                     with st.spinner("🔄 Processing audio with ASR..."):
                         asr_transcript = call_sarvam_asr(
-                            st.session_state.recorded_audio,
+                            audio_data,
                             language,
                             st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
                         )
