@@ -851,37 +851,68 @@ def show_testing_interface():
         
         # Show results immediately after submit (matches Flask) - OUTSIDE the audio_stored block
         if st.session_state.get(audio_submitted_key, False):
-                    result = st.session_state.get(f'asr_result_{recording_key}', {})
-                    st.markdown("---")
-                    st.markdown("### ✅ Recording Submitted!")
-                    
-                    if result.get('transcript'):
-                        st.markdown(f"**Transcription:** {result['transcript']}")
-                        keyword_badge = "✅ **Yes**" if result.get('matches') else "❌ **No**"
-                        st.markdown(f"**Keyword Detected:** {keyword_badge}")
-                        
-                        # Save result (only once)
-                        result_saved_key = f'result_saved_{recording_key}'
-                        if not st.session_state.get(result_saved_key, False):
-                            test_result = {
-                                "qa_name": st.session_state.qa_name,
-                                "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
-                                "crop_name": crop_name,
-                                "crop_code": crop_code,
-                                "language": language,
-                                "expected": crop_name,
-                                "actual": result['transcript'],
-                                "match": "Yes" if result.get('matches') else "No",
-                                "timestamp": datetime.now().isoformat(),
-                                "audio_recorded": True
-                            }
-                            st.session_state.test_results.append(test_result)
-                            st.session_state[result_saved_key] = True
-                    else:
-                        st.error("❌ ASR processing failed. Please check your API key.")
+            result = st.session_state.get(f'asr_result_{recording_key}', {})
+            st.markdown("---")
+            st.markdown("### ✅ Recording Submitted!")
+            
+            if result.get('transcript'):
+                st.markdown(f"**Transcription:** {result['transcript']}")
+                keyword_badge = "✅ **Yes**" if result.get('matches') else "❌ **No**"
+                st.markdown(f"**Keyword Detected:** {keyword_badge}")
                 
-                # Always show Next button if result was submitted (make it more visible)
-                if st.session_state.get(audio_submitted_key, False):
+                # Save result (only once)
+                result_saved_key = f'result_saved_{recording_key}'
+                if not st.session_state.get(result_saved_key, False):
+                    test_result = {
+                        "qa_name": st.session_state.qa_name,
+                        "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                        "crop_name": crop_name,
+                        "crop_code": crop_code,
+                        "language": language,
+                        "expected": crop_name,
+                        "actual": result['transcript'],
+                        "match": "Yes" if result.get('matches') else "No",
+                        "timestamp": datetime.now().isoformat(),
+                        "audio_recorded": True
+                    }
+                    st.session_state.test_results.append(test_result)
+                    st.session_state[result_saved_key] = True
+            else:
+                st.error("❌ ASR processing failed. Please check your API key.")
+            
+            # Always show Next button if result was submitted (make it more visible)
+            st.markdown("---")
+            st.markdown("### Continue Testing")
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                if st.button("➡️ Next Crop", type="primary", key=f"next_{recording_key}", use_container_width=True):
+                    # Move to next crop
+                    st.session_state.current_test_index += 1
+                    # Clear this recording's state
+                    result_saved_key = f'result_saved_{recording_key}'
+                    for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
+                               f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
+                               audio_submitted_key, result_saved_key]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            with col2:
+                if st.button("🔄 Record Again", key=f"rerecord_after_submit_{recording_key}", use_container_width=True):
+                    # Clear submission state to allow re-recording
+                    result_saved_key = f'result_saved_{recording_key}'
+                    st.session_state[audio_submitted_key] = False
+                    st.session_state[result_saved_key] = False
+                    # Remove the saved result
+                    if st.session_state.test_results and len(st.session_state.test_results) > 0:
+                        # Remove last result if it matches this crop
+                        last_result = st.session_state.test_results[-1]
+                        if last_result.get('crop_name') == crop_name:
+                            st.session_state.test_results.pop()
+                    st.rerun()
+            with col3:
+                if st.button("🔄 Try Again", key=f"retry_{recording_key}", use_container_width=True):
+                    st.session_state[audio_submitted_key] = False
+                    st.rerun()
                     st.markdown("---")
                     st.markdown("### Continue Testing")
                     col1, col2, col3 = st.columns([2, 1, 1])
