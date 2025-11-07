@@ -413,7 +413,8 @@ def show_testing_interface():
         recording_key = f"recording_{st.session_state.current_test_index}"
         
         # Custom Audio Recorder HTML Component
-        audio_recorder_html = f"""
+        # Use .format() instead of f-string to avoid issues with curly braces
+        audio_recorder_html = """
         <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
             <button id="startBtn-{recording_key}" style="
                 background: #1e3c72;
@@ -534,7 +535,7 @@ def show_testing_interface():
             }});
         }})();
         </script>
-        """
+        """.format(recording_key=recording_key)
         
         # Render the audio recorder
         components.html(audio_recorder_html, height=300, key=f"recorder_{recording_key}")
