@@ -1051,69 +1051,39 @@ def show_testing_interface():
             
             # AUTO-ADVANCE like Flask (after showing results)
             if result.get('transcript'):  # Only auto-advance if we got a result
-                # Use a timer approach instead of blocking sleep
-                auto_advance_key = f'auto_advance_{recording_key}'
-                if auto_advance_key not in st.session_state:
-                    st.session_state[auto_advance_key] = datetime.now()
-                
-                elapsed = (datetime.now() - st.session_state[auto_advance_key]).total_seconds()
-                
+                st.markdown("---")
                 if current_attempt_num < max_attempts:
-                    # More attempts remaining - auto-advance to next attempt after 8 seconds
-                    remaining = int(8 - elapsed)
-                    if remaining > 0:
-                        st.info(f"⏳ Moving to next attempt ({current_attempt_num + 1}/{max_attempts}) in {remaining} seconds...")
-                        # Use JavaScript to auto-advance after delay
-                        auto_advance_js = f"""
-                        <script>
-                            setTimeout(function() {{
-                                window.location.reload();
-                            }}, 1000);
-                        </script>
-                        """
-                        components.html(auto_advance_js, height=0)
-                        time.sleep(1)  # Short sleep then rerun
-                        st.rerun()
-                    else:
-                        # Time's up - move to next attempt
+                    # More attempts remaining - show button to continue
+                    st.info(f"✅ Result saved! Continue with attempt {current_attempt_num + 1}/{max_attempts}")
+                    if st.button(f"➡️ Continue to Attempt {current_attempt_num + 1}", type="primary", key=f"continue_attempt_{recording_key}", use_container_width=True):
+                        # Move to next attempt
                         st.session_state.current_attempt[crop_index] = current_attempt_num + 1
                         # Clear this attempt's state
                         result_saved_key = f'result_saved_{recording_key}'
                         for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
-                                   f'asr_result_{recording_key}', audio_submitted_key, result_saved_key, auto_advance_key]:
+                                   f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
                             if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
                 else:
-                    # All attempts done - auto-advance to next crop after 10 seconds
-                    remaining = int(10 - elapsed)
-                    if remaining > 0:
-                        st.info(f"⏳ All 5 attempts completed. Moving to next crop in {remaining} seconds...")
-                        # Use JavaScript to auto-advance after delay
-                        auto_advance_js = f"""
-                        <script>
-                            setTimeout(function() {{
-                                window.location.reload();
-                            }}, 1000);
-                        </script>
-                        """
-                        components.html(auto_advance_js, height=0)
-                        time.sleep(1)  # Short sleep then rerun
-                        st.rerun()
-                    else:
-                        # Time's up - move to next crop
-                        if crop_index + 1 < len(st.session_state.test_data):
+                    # All attempts done - show button to move to next crop
+                    st.info("✅ All 5 attempts completed for this crop!")
+                    if crop_index + 1 < len(st.session_state.test_data):
+                        if st.button("➡️ Next Crop", type="primary", key=f"next_crop_{recording_key}", use_container_width=True):
+                            # Move to next crop
                             st.session_state.current_test_index = crop_index + 1
                             # Reset attempt for new crop
                             if crop_index + 1 not in st.session_state.current_attempt:
                                 st.session_state.current_attempt[crop_index + 1] = 1
                             # Clear all state
                             for key in list(st.session_state.keys()):
-                                if 'recording_' in key or 'audio_' in key or 'auto_advance' in key:
+                                if 'recording_' in key or 'audio_' in key:
                                     del st.session_state[key]
                             st.rerun()
-                        else:
-                            # All crops done - go to results
+                    else:
+                        # All crops done - go to results
+                        st.success("🎉 All crops completed!")
+                        if st.button("📊 View Results & Download CSV", type="primary", key=f"view_results_{recording_key}", use_container_width=True):
                             st.session_state.show_results = True
                             st.rerun()
         
