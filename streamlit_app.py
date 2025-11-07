@@ -892,6 +892,9 @@ def show_testing_interface():
                             st.warning(f"Could not convert webm to wav: {e}. Using original format.")
                             audio_format = 'webm'
                     
+                    # Store audio format for error logs
+                    st.session_state[f'_audio_format_{recording_key}'] = audio_format
+                    
                     # Call ASR API (like Flask)
                     # Get API key - try multiple methods (same as error logs section)
                     api_key = None
