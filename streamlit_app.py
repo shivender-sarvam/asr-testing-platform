@@ -137,7 +137,7 @@ def get_google_config():
 ALLOWED_DOMAINS = ['gmail.com', 'googlemail.com', 'google.com', 'sarvam.ai']
 
 # Sarvam ASR API Configuration
-SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
+SARVAM_API_URL = "http://103.207.148.23/saaras_v2_6/audio/transcriptions"
 BCP47_CODES = {
     "en": "en-IN",
     "hi": "hi-IN",
@@ -217,7 +217,11 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/w
         if response.status_code == 200:
             result = response.json()
             st.info(f"🔍 API Response: {result}")
-            transcript = result.get('transcript', result.get('text', '')).strip()
+            # Try different possible response formats
+            transcript = (result.get('transcript') or 
+                         result.get('text') or 
+                         result.get('transcription') or
+                         '').strip()
             if transcript:
                 st.success(f"✅ ASR Transcript: {transcript}")
             return transcript
