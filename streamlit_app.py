@@ -1028,6 +1028,8 @@ def show_testing_interface():
             st.session_state.test_data = []
             st.session_state.current_test_index = 0
             st.session_state.test_results = []
+            st.session_state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            st.session_state.current_attempt = {}
             st.rerun()
 
 # Main execution
