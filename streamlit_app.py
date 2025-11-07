@@ -204,43 +204,40 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         st.warning(f"⚠️ ASR API call failed: {str(e)}. Using mock transcription.")
         return None
 
-def calculate_accuracy(expected_text, actual_text):
+def check_match(expected_text, actual_text):
     """
-    Calculate accuracy by comparing expected crop name with ASR transcription
+    Check if ASR transcription matches the expected crop name
     
     Args:
         expected_text: Expected crop name (e.g., "Wheat")
         actual_text: ASR transcription result
     
     Returns:
-        float: Accuracy percentage (0-100)
+        bool: True if match, False if no match
     """
     if not actual_text:
-        return 0.0
+        return False
     
-    # Normalize both texts (lowercase, remove extra spaces)
+    # Normalize both texts (lowercase, remove extra spaces and punctuation)
     expected_clean = re.sub(r'[^\w\s]', '', expected_text.lower().strip())
     actual_clean = re.sub(r'[^\w\s]', '', actual_text.lower().strip())
     
     # Exact match
     if expected_clean == actual_clean:
-        return 100.0
+        return True
     
     # Check if expected word is in the transcription
     if expected_clean in actual_clean:
-        return 95.0  # High accuracy if crop name found in transcription
+        return True
     
     # Check if transcription contains key parts of expected word
     expected_words = expected_clean.split()
-    actual_words = actual_clean.split()
-    
-    matches = sum(1 for word in expected_words if word in actual_clean)
-    if matches > 0:
-        # Partial match - calculate based on word matches
-        return (matches / len(expected_words)) * 90.0
+    for word in expected_words:
+        if word in actual_clean:
+            return True
     
     # No match
-    return 0.0
+    return False
 
 def check_authentication():
     """Check if user is authenticated"""
@@ -737,16 +734,14 @@ def show_testing_interface():
                         )
                         
                         if asr_transcript:
-                            accuracy = calculate_accuracy(crop_name, asr_transcript)
+                            matches = check_match(crop_name, asr_transcript)
                             st.session_state[asr_result_key] = {
                                 'transcript': asr_transcript,
-                                'accuracy': accuracy,
-                                'matches': accuracy > 0
+                                'matches': matches
                             }
                         else:
                             st.session_state[asr_result_key] = {
                                 'transcript': None,
-                                'accuracy': 0.0,
                                 'matches': False
                             }
                         
@@ -772,12 +767,9 @@ def show_testing_interface():
                     st.markdown(f"**Expected:** {crop_name}")
                     
                     if result['matches']:
-                        if result['accuracy'] >= 95:
-                            st.success(f"✅ **MATCH!** Accuracy: {result['accuracy']:.1f}%")
-                        else:
-                            st.warning(f"⚠️ **PARTIAL MATCH** Accuracy: {result['accuracy']:.1f}%")
+                        st.success("✅ **MATCH!**")
                     else:
-                        st.error(f"❌ **NO MATCH** Accuracy: {result['accuracy']:.1f}%")
+                        st.error("❌ **NO MATCH**")
                 else:
                     st.error("❌ ASR processing failed. Please check your API key.")
             
@@ -809,17 +801,17 @@ def show_testing_interface():
                 # Get ASR results from automatic processing
                 asr_result_data = st.session_state.get(asr_result_key, {})
                 asr_transcript = asr_result_data.get('transcript', None)
-                accuracy = asr_result_data.get('accuracy', 0.0)
+                matches = asr_result_data.get('matches', False)
                 
                 if asr_transcript:
-                    asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
+                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
                 elif st.session_state.recorded_audio:
                     asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    accuracy = 0.0
+                    matches = False
                 else:
                     st.warning("⚠️ No audio recorded! Please record audio first.")
                     asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    accuracy = 0.0
+                    matches = False
                 
                 result = {
                     "qa_name": st.session_state.qa_name,
@@ -829,7 +821,7 @@ def show_testing_interface():
                     "language": language,
                     "expected": crop_name,
                     "actual": asr_transcript if asr_transcript else asr_result,
-                    "accuracy": accuracy,
+                    "match": "Yes" if matches else "No",
                     "timestamp": datetime.now().isoformat(),
                     "audio_recorded": st.session_state.recorded_audio is not None
                 }
@@ -847,17 +839,17 @@ def show_testing_interface():
                 # Get ASR results from automatic processing
                 asr_result_data = st.session_state.get(asr_result_key, {})
                 asr_transcript = asr_result_data.get('transcript', None)
-                accuracy = asr_result_data.get('accuracy', 0.0)
+                matches = asr_result_data.get('matches', False)
                 
                 if asr_transcript:
-                    asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
+                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
                 elif st.session_state.recorded_audio:
                     asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    accuracy = 0.0
+                    matches = False
                 else:
                     st.warning("⚠️ No audio recorded! Please record audio first.")
                     asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    accuracy = 0.0
+                    matches = False
                 
                 result = {
                     "qa_name": st.session_state.qa_name,
@@ -865,9 +857,9 @@ def show_testing_interface():
                     "crop_name": crop_name,
                     "crop_code": crop_code,
                     "language": language,
-                    "expected": crop_name,  # Store just the crop name, not the full sentence
+                    "expected": crop_name,
                     "actual": asr_transcript if asr_transcript else asr_result,
-                    "accuracy": accuracy,
+                    "match": "Yes" if matches else "No",
                     "timestamp": datetime.now().isoformat(),
                     "audio_recorded": st.session_state.recorded_audio is not None
                 }
@@ -886,7 +878,10 @@ def show_testing_interface():
         
         # Results summary
         st.markdown(f"**Total Tests:** {len(st.session_state.test_results)}")
-        st.markdown(f"**Average Accuracy:** {sum(r['accuracy'] for r in st.session_state.test_results) / len(st.session_state.test_results):.1f}%")
+        if st.session_state.test_results:
+            # Count matches (handle both old 'accuracy' format and new 'match' format)
+            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('accuracy', 0) > 0))
+            st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
         
         # Results table
         if st.session_state.test_results:
