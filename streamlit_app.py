@@ -8,7 +8,7 @@ import re
 import requests
 import os
 from urllib.parse import urlencode
-from st_audiorec import st_audiorec
+import streamlit.components.v1 as components
 
 # Page config
 st.set_page_config(
@@ -382,22 +382,155 @@ def show_testing_interface():
         
         # Audio Recording Component
         st.markdown("### 🎤 Record Audio")
-        st.markdown("Use the audio recorder below to record your voice. Click the microphone to start/stop recording.")
         
         # Create unique key for this crop's recording
         recording_key = f"recording_{st.session_state.current_test_index}"
         
-        # Use st_audiorec component
-        wav_audio_data = st_audiorec(key=recording_key)
+        # Custom Audio Recorder HTML Component
+        audio_recorder_html = f"""
+        <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
+            <button id="startBtn-{recording_key}" style="
+                background: #1e3c72;
+                color: white;
+                border: none;
+                padding: 15px 30px;
+                font-size: 16px;
+                border-radius: 5px;
+                cursor: pointer;
+                margin: 5px;
+            ">🎤 Start Recording</button>
+            
+            <button id="stopBtn-{recording_key}" disabled style="
+                background: #dc3545;
+                color: white;
+                border: none;
+                padding: 15px 30px;
+                font-size: 16px;
+                border-radius: 5px;
+                cursor: not-allowed;
+                margin: 5px;
+                opacity: 0.5;
+            ">⏹️ Stop Recording</button>
+            
+            <div id="status-{recording_key}" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
+                🔴 Recording... Speak clearly!
+            </div>
+            
+            <div id="playback-{recording_key}" style="margin: 20px 0; display: none;">
+                <p style="color: #28a745; font-weight: bold;">✅ Recording completed! Listen to your recording:</p>
+                <audio id="audioPlayer-{recording_key}" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
+                <a id="downloadLink-{recording_key}" download="recording.wav" style="
+                    display: inline-block;
+                    background: #28a745;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    text-decoration: none;
+                    margin: 10px;
+                ">📥 Download Recording</a>
+            </div>
+        </div>
         
-        # Store and display recorded audio
-        if wav_audio_data is not None:
-            st.session_state.recorded_audio = wav_audio_data
-            st.success("✅ Recording completed!")
+        <script>
+        (function() {{
+            const key = '{recording_key}';
+            let mediaRecorder;
+            let audioChunks = [];
+            let audioBlob = null;
+            
+            const startBtn = document.getElementById('startBtn-' + key);
+            const stopBtn = document.getElementById('stopBtn-' + key);
+            const statusDiv = document.getElementById('status-' + key);
+            const playbackDiv = document.getElementById('playback-' + key);
+            const audioPlayer = document.getElementById('audioPlayer-' + key);
+            const downloadLink = document.getElementById('downloadLink-' + key);
+            
+            startBtn.addEventListener('click', async function() {{
+                try {{
+                    const stream = await navigator.mediaDevices.getUserMedia({{
+                        audio: {{
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }}
+                    }});
+                    
+                    let mimeType = 'audio/webm';
+                    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {{
+                        mimeType = 'audio/webm;codecs=opus';
+                    }}
+                    
+                    mediaRecorder = new MediaRecorder(stream, {{ mimeType: mimeType }});
+                    audioChunks = [];
+                    
+                    mediaRecorder.ondataavailable = function(event) {{
+                        if (event.data.size > 0) {{
+                            audioChunks.push(event.data);
+                        }}
+                    }};
+                    
+                    mediaRecorder.onstop = function() {{
+                        audioBlob = new Blob(audioChunks, {{ type: mimeType }});
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        audioPlayer.src = audioUrl;
+                        downloadLink.href = audioUrl;
+                        playbackDiv.style.display = 'block';
+                        
+                        stream.getTracks().forEach(track => track.stop());
+                    }};
+                    
+                    mediaRecorder.start(100);
+                    startBtn.disabled = true;
+                    startBtn.style.opacity = '0.5';
+                    startBtn.style.cursor = 'not-allowed';
+                    stopBtn.disabled = false;
+                    stopBtn.style.opacity = '1';
+                    stopBtn.style.cursor = 'pointer';
+                    statusDiv.style.display = 'block';
+                    
+                }} catch (error) {{
+                    alert('Error accessing microphone: ' + error.message);
+                }}
+            }});
+            
+            stopBtn.addEventListener('click', function() {{
+                if (mediaRecorder && mediaRecorder.state === 'recording') {{
+                    mediaRecorder.stop();
+                    startBtn.disabled = false;
+                    startBtn.style.opacity = '1';
+                    startBtn.style.cursor = 'pointer';
+                    stopBtn.disabled = true;
+                    stopBtn.style.opacity = '0.5';
+                    stopBtn.style.cursor = 'not-allowed';
+                    statusDiv.style.display = 'none';
+                }}
+            }});
+        }})();
+        </script>
+        """
+        
+        # Render the audio recorder
+        components.html(audio_recorder_html, height=300, key=f"recorder_{recording_key}")
+        
+        # File uploader for audio
+        st.markdown("---")
+        st.markdown("**Upload your recorded audio file:**")
+        uploaded_audio = st.file_uploader(
+            "Choose Audio File",
+            type=['wav', 'mp3', 'webm', 'ogg', 'm4a'],
+            key=f"audio_upload_{recording_key}",
+            help="Record audio using the buttons above, then download and upload the file here, or use your device's voice recorder"
+        )
+        
+        # Store and display uploaded audio
+        if uploaded_audio:
+            st.session_state.recorded_audio = uploaded_audio.read()
+            st.success("✅ Audio file uploaded!")
             
             # Display audio player
             st.markdown("### 🔊 Listen to Your Recording")
-            st.audio(wav_audio_data, format="audio/wav")
+            st.audio(st.session_state.recorded_audio, format="audio/wav")
             
             # Option to record again
             if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
