@@ -8,7 +8,7 @@ import re
 import requests
 import os
 from urllib.parse import urlencode
-from audio_recorder_streamlit import audio_recorder
+from st_audiorec import st_audiorec
 
 # Page config
 st.set_page_config(
@@ -382,29 +382,22 @@ def show_testing_interface():
         
         # Audio Recording Component
         st.markdown("### 🎤 Record Audio")
-        st.markdown("Click the microphone button below to start recording. Click again to stop.")
+        st.markdown("Use the audio recorder below to record your voice. Click the microphone to start/stop recording.")
         
         # Create unique key for this crop's recording
         recording_key = f"recording_{st.session_state.current_test_index}"
         
-        # Use audio_recorder component
-        audio_bytes = audio_recorder(
-            text="",
-            recording_color="#dc3545",
-            neutral_color="#1e3c72",
-            icon_name="microphone",
-            icon_size="2x",
-            key=recording_key
-        )
+        # Use st_audiorec component
+        wav_audio_data = st_audiorec(key=recording_key)
         
         # Store and display recorded audio
-        if audio_bytes:
-            st.session_state.recorded_audio = audio_bytes
+        if wav_audio_data is not None:
+            st.session_state.recorded_audio = wav_audio_data
             st.success("✅ Recording completed!")
             
             # Display audio player
             st.markdown("### 🔊 Listen to Your Recording")
-            st.audio(audio_bytes, format="audio/wav")
+            st.audio(wav_audio_data, format="audio/wav")
             
             # Option to record again
             if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
