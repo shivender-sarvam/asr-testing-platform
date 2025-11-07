@@ -683,7 +683,9 @@ def show_testing_interface():
             }});
         }})();
         </script>
-        """.format(recording_key=recording_key)
+        """
+        # Replace placeholder with actual recording key
+        audio_recorder_html = audio_recorder_html_template.replace('PLACEHOLDER_KEY', recording_key)
         
         # Add a hidden text input to receive base64 audio from JavaScript
         audio_base64 = st.text_input(
