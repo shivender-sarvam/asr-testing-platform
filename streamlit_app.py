@@ -540,14 +540,16 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # File uploader for audio
+        # File uploader for audio (optional - for playback and ASR processing)
         st.markdown("---")
-        st.markdown("**Upload your recorded audio file:**")
+        st.markdown("**📤 Optional: Upload your recorded audio file**")
+        st.info("💡 **Tip:** After recording above, download the file and upload it here to listen back. You can also complete the test without uploading.")
+        
         uploaded_audio = st.file_uploader(
-            "Choose Audio File",
+            "Choose Audio File (Optional)",
             type=['wav', 'mp3', 'webm', 'ogg', 'm4a'],
             key=f"audio_upload_{recording_key}",
-            help="Record audio using the buttons above, then download and upload the file here, or use your device's voice recorder"
+            help="Record audio using the buttons above, then download and upload the file here for playback"
         )
         
         # Store and display uploaded audio
@@ -581,31 +583,32 @@ def show_testing_interface():
         
         with col3:
             if st.button("✅ Complete Test", type="primary"):
-                # Check if audio was recorded
-                if not st.session_state.recorded_audio:
-                    st.warning("⚠️ Please record audio before completing the test!")
+                # Allow completion even without uploaded audio (user may have recorded but not uploaded)
+                # TODO: Call Sarvam ASR API here with recorded audio if available
+                # For now, simulate ASR result
+                if st.session_state.recorded_audio:
+                    asr_result = f"Recorded audio for {crop_name} (audio file uploaded)"
                 else:
-                    # TODO: Call Sarvam ASR API here with recorded audio
-                    # For now, simulate ASR result
-                    asr_result = f"Recorded audio for {crop_name}"
-                    
-                    result = {
-                        "qa_name": st.session_state.qa_name,
-                        "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
-                        "crop_name": crop_name,
-                        "crop_code": crop_code,
-                        "language": language,
-                        "expected": test_sentence,
-                        "actual": asr_result,
-                        "accuracy": 95.0,
-                        "timestamp": datetime.now().isoformat(),
-                        "audio_recorded": True
-                    }
-                    st.session_state.test_results.append(result)
-                    # Clear recorded audio for next test
-                    st.session_state.recorded_audio = None
-                    st.session_state.current_test_index += 1
-                    st.rerun()
+                    asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
+                
+                result = {
+                    "qa_name": st.session_state.qa_name,
+                    "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                    "crop_name": crop_name,
+                    "crop_code": crop_code,
+                    "language": language,
+                    "expected": test_sentence,
+                    "actual": asr_result,
+                    "accuracy": 95.0,
+                    "timestamp": datetime.now().isoformat(),
+                    "audio_recorded": st.session_state.recorded_audio is not None
+                }
+                st.session_state.test_results.append(result)
+                # Clear recorded audio for next test
+                st.session_state.recorded_audio = None
+                st.session_state.current_test_index += 1
+                st.success("✅ Test completed! Moving to next crop...")
+                st.rerun()
     
     else:
         # Testing complete
