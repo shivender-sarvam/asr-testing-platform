@@ -193,7 +193,15 @@ def handle_oauth_callback():
     """Handle OAuth callback"""
     query_params = st.query_params
     
-    if 'code' in query_params:
+    # If already authenticated, don't process callback again
+    if st.session_state.authenticated:
+        # Clear OAuth code from URL if present
+        if 'code' in query_params:
+            st.query_params.clear()
+        return
+    
+    # Only process callback if we have a code and are not already authenticated
+    if 'code' in query_params and not st.session_state.authenticated:
         code = query_params['code']
         config = get_google_config()
         
@@ -224,14 +232,20 @@ def handle_oauth_callback():
                 if email_domain in ALLOWED_DOMAINS:
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
-                    st.success(f"Welcome, {user_info['name']}!")
+                    # Clear the OAuth code from URL
+                    st.query_params.clear()
                     st.rerun()
                 else:
                     st.error("Access denied. Please use a Google account or Sarvam email.")
             else:
-                st.error("Authentication failed. Please try again.")
+                # Don't show error if code was already used (user is already logged in)
+                error_msg = token_json.get('error_description', 'Authentication failed')
+                if 'invalid_grant' not in error_msg.lower():
+                    st.error(f"Authentication failed: {error_msg}")
         except Exception as e:
-            st.error(f"Login failed: {str(e)}")
+            # Only show error if not already authenticated
+            if not st.session_state.authenticated:
+                st.error(f"Login failed: {str(e)}")
 
 def main_app():
     """Main application interface"""
