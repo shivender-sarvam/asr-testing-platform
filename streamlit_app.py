@@ -169,7 +169,7 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
             api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
         
         if not api_key:
-            st.warning("⚠️ Sarvam API key not configured. Please add SARVAM_API_KEY to Streamlit secrets.")
+            st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
             return None
         
         # Get BCP47 language code
