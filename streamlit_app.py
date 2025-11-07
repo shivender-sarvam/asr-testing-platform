@@ -642,8 +642,8 @@ def show_testing_interface():
                 }}
                 
                 console.log('Audio recorder initialized for key:', key);
-            
-            startBtn.addEventListener('click', async function() {{
+                
+                startBtn.addEventListener('click', async function() {{
                 console.log('Start button clicked');
                 try {{
                     const stream = await navigator.mediaDevices.getUserMedia({{
@@ -754,9 +754,9 @@ def show_testing_interface():
                 }} catch (error) {{
                     alert('Error accessing microphone: ' + error.message);
                 }}
-            }});
-            
-            stopBtn.addEventListener('click', function() {{
+                }});
+                
+                stopBtn.addEventListener('click', function() {{
                 console.log('Stop button clicked');
                 if (mediaRecorder && mediaRecorder.state === 'recording') {{
                     mediaRecorder.stop();
@@ -768,7 +768,7 @@ def show_testing_interface():
                     stopBtn.style.cursor = 'not-allowed';
                     if (statusDiv) statusDiv.style.display = 'none';
                 }}
-            }});
+                }});
             }}
             
             // Initialize when DOM is ready
