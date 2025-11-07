@@ -1073,7 +1073,7 @@ def show_testing_interface():
                         "transcript": result['transcript'],
                         "keyword_detected": "Yes" if result.get('matches') else "No",
                         "match": "Yes" if result.get('matches') else "No",  # Keep for compatibility
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         "audio_recorded": True
                     }
                     st.session_state.test_results.append(test_result)
