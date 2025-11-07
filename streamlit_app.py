@@ -236,13 +236,27 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     st.success(f"✅ ASR Success: '{transcript}'")
                     return transcript
                 else:
-                    # API returned 200 but no transcript
+                    # API returned 200 but no transcript - store full response for debugging
                     st.error(f"❌ API returned 200 but no transcript in response")
                     st.code(f"Full response: {result}", language='json')
+                    # Store in session state for error logs
+                    if hasattr(st, 'session_state'):
+                        st.session_state['_last_api_response'] = {
+                            'status_code': 200,
+                            'response': result,
+                            'error': 'No transcript in response'
+                        }
                     return None
             except Exception as json_error:
                 st.error(f"❌ Failed to parse API response: {json_error}")
                 st.code(f"Raw response: {response.text[:1000]}", language='text')
+                # Store raw response for debugging
+                if hasattr(st, 'session_state'):
+                    st.session_state['_last_api_response'] = {
+                        'status_code': 200,
+                        'raw_response': response.text[:2000],
+                        'error': f'JSON parse error: {json_error}'
+                    }
                 return None
         else:
             st.error(f"❌ API error: HTTP {response.status_code}")
@@ -250,9 +264,24 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 error_body = response.json()
                 st.error(f"Error details: {error_body}")
                 st.code(f"Full error response: {error_body}", language='json')
+                # Store error response for debugging
+                if hasattr(st, 'session_state'):
+                    st.session_state['_last_api_response'] = {
+                        'status_code': response.status_code,
+                        'response': error_body,
+                        'error': f'HTTP {response.status_code}'
+                    }
             except:
-                st.error(f"Error text: {response.text[:1000]}")
-                st.code(f"Raw error response: {response.text[:1000]}", language='text')
+                error_text = response.text[:1000]
+                st.error(f"Error text: {error_text}")
+                st.code(f"Raw error response: {error_text}", language='text')
+                # Store raw error for debugging
+                if hasattr(st, 'session_state'):
+                    st.session_state['_last_api_response'] = {
+                        'status_code': response.status_code,
+                        'raw_response': error_text,
+                        'error': f'HTTP {response.status_code}'
+                    }
             return None
             
     except requests.exceptions.Timeout:
@@ -1080,7 +1109,15 @@ def show_testing_interface():
                     
                     # Show what was actually sent to API
                     st.write("**Request Details:**")
-                    st.code(f"Headers: api-subscription-key: {'Set' if api_key_check != 'NOT FOUND' else 'Missing'}\nFiles: audio.{audio_format if 'audio_format' in locals() else 'webm'}\nData: model={MODEL_NAME}, language_code={BCP47_CODES.get(language.lower(), 'hi-IN')}", language='text')
+                    # Get audio_format from session state if available
+                    audio_format_used = st.session_state.get(f'_audio_format_{recording_key}', 'webm')
+                    st.code(f"Headers: api-subscription-key: {'Set' if api_key_check != 'NOT FOUND' else 'Missing'}\nFiles: audio.{audio_format_used}\nData: model={MODEL_NAME}, language_code={BCP47_CODES.get(language.lower(), 'hi-IN')}", language='text')
+                    
+                    # Show actual API response if available
+                    if st.session_state.get('_last_api_response'):
+                        st.write("**Actual API Response:**")
+                        api_resp = st.session_state['_last_api_response']
+                        st.code(f"Status: {api_resp.get('status_code', 'N/A')}\nError: {api_resp.get('error', 'N/A')}\nResponse: {api_resp.get('response', api_resp.get('raw_response', 'N/A'))}", language='json')
                 
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
