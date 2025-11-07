@@ -10,6 +10,30 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def get_azure_config():
+    """
+    Get Azure storage configuration from environment variables or Streamlit secrets.
+    Works in both Flask (os.environ) and Streamlit (st.secrets) contexts.
+    """
+    # Try Streamlit secrets first (for Streamlit Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            account_name = st.secrets.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
+            container_name = st.secrets.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
+            account_key = st.secrets.get('AZURE_STORAGE_ACCOUNT_KEY')
+            if account_key:
+                return account_name, container_name, account_key
+    except (ImportError, AttributeError, RuntimeError):
+        pass  # Not in Streamlit context, fall back to os.environ
+    
+    # Fall back to environment variables (for Flask/Render)
+    account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
+    container_name = os.environ.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
+    account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+    
+    return account_name, container_name, account_key
+
 def upload_csv_to_blob(csv_file_path: str, folder_name: str = "ASR Testing Dump", 
                       blob_filename: Optional[str] = None, 
                       add_timestamp: bool = False) -> str:
@@ -25,13 +49,11 @@ def upload_csv_to_blob(csv_file_path: str, folder_name: str = "ASR Testing Dump"
     Returns:
         str: The URL of the uploaded blob
     """
-    # Azure Storage Configuration
-    account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
-    container_name = os.environ.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
-    account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+    # Azure Storage Configuration (works with both Flask env vars and Streamlit secrets)
+    account_name, container_name, account_key = get_azure_config()
     
     if not account_key:
-        raise ValueError("AZURE_STORAGE_ACCOUNT_KEY environment variable not set")
+        raise ValueError("AZURE_STORAGE_ACCOUNT_KEY not set in environment variables or Streamlit secrets")
     
     connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
     try:
@@ -99,13 +121,11 @@ def upload_csv_data_to_blob(csv_data: str, filename: str,
     Returns:
         str: The URL of the uploaded blob
     """
-    # Azure Storage Configuration
-    account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
-    container_name = os.environ.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
-    account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+    # Azure Storage Configuration (works with both Flask env vars and Streamlit secrets)
+    account_name, container_name, account_key = get_azure_config()
     
     if not account_key:
-        raise ValueError("AZURE_STORAGE_ACCOUNT_KEY environment variable not set")
+        raise ValueError("AZURE_STORAGE_ACCOUNT_KEY not set in environment variables or Streamlit secrets")
     
     connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
     
