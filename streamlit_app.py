@@ -1015,6 +1015,14 @@ def show_testing_interface():
                     except Exception as e:
                         st.error(f"Error processing audio: {e}")
         
+        # DEBUG: Show what's happening
+        with st.expander("🔍 Debug Info", expanded=False):
+            st.write(f"**Audio base64 present:** {bool(audio_base64)}")
+            st.write(f"**Audio processed:** {st.session_state.get(f'audio_processed_{recording_key}', False)}")
+            st.write(f"**Audio submitted:** {st.session_state.get(audio_submitted_key, False)}")
+            st.write(f"**Has result:** {bool(st.session_state.get(f'asr_result_{recording_key}', {}))}")
+            st.write(f"**Test results count:** {len(st.session_state.test_results)}")
+        
         # Show results immediately after processing (EXACT FLASK WORKFLOW)
         if st.session_state.get(audio_submitted_key, False):
             result = st.session_state.get(f'asr_result_{recording_key}', {})
@@ -1046,12 +1054,11 @@ def show_testing_interface():
                     }
                     st.session_state.test_results.append(test_result)
                     st.session_state[result_saved_key] = True
-            else:
-                st.error("❌ ASR processing failed. Please check your API key.")
+                    st.success(f"✅ Result saved! Total results: {len(st.session_state.test_results)}")
             
             # AUTO-ADVANCE like Flask (after showing results)
-            if result.get('transcript'):  # Only auto-advance if we got a result
-                st.markdown("---")
+            st.markdown("---")
+            if result.get('transcript'):
                 if current_attempt_num < max_attempts:
                     # More attempts remaining - show button to continue
                     st.info(f"✅ Result saved! Continue with attempt {current_attempt_num + 1}/{max_attempts}")
@@ -1086,6 +1093,15 @@ def show_testing_interface():
                         if st.button("📊 View Results & Download CSV", type="primary", key=f"view_results_{recording_key}", use_container_width=True):
                             st.session_state.show_results = True
                             st.rerun()
+            else:
+                st.error("❌ ASR processing failed. Please check your API key or try recording again.")
+                if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
+                    # Clear state to allow retry
+                    for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
+                               f'asr_result_{recording_key}', audio_submitted_key]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
         
         # End Session button (matches Flask version)
         st.markdown("---")
@@ -1094,13 +1110,17 @@ def show_testing_interface():
             st.rerun()
     
     # Show results page
-    if st.session_state.get('show_results', False) or st.session_state.current_test_index >= len(st.session_state.test_data):
+    if st.session_state.get('show_results', False) or (st.session_state.test_data and st.session_state.current_test_index >= len(st.session_state.test_data)):
         # Testing complete
         st.header("🎉 Testing Complete!")
         
         # Results summary
         if st.session_state.test_results:
             st.markdown(f"**Total Tests:** {len(st.session_state.test_results)}")
+            # Count matches
+            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('keyword_detected') == 'Yes'))
+            st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
+        
         if st.session_state.test_results:
             # Count matches (handle both old 'accuracy' format and new 'match' format)
             matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('accuracy', 0) > 0))
