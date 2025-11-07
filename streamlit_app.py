@@ -157,16 +157,16 @@ def show_login_page():
     <div class="login-container">
         <h2>Welcome back</h2>
         <p>Login to your account</p>
-        
-        <h3>Platform Features:</h3>
-        <ul style="text-align: left; display: inline-block;">
-            <li>Test ASR accuracy with crop names</li>
-            <li>Record audio for multiple languages</li>
-            <li>Generate detailed CSV reports</li>
-            <li>Track pronunciation accuracy</li>
-        </ul>
     </div>
     """, unsafe_allow_html=True)
+    
+    st.markdown("**Platform Features:**")
+    st.markdown("""
+    - Test ASR accuracy with crop names
+    - Record audio for multiple languages
+    - Generate detailed CSV reports
+    - Track pronunciation accuracy
+    """)
     
     # Google OAuth Login
     config = get_google_config()
