@@ -908,6 +908,49 @@ def show_testing_interface():
             help="Hidden input for audio from JavaScript"
         )
         
+        # Fallback: Check sessionStorage if input is empty (JavaScript might have stored it there)
+        if not audio_base64:
+            # Inject JavaScript to read from sessionStorage and populate input
+            check_storage_js = f"""
+            <script>
+                (function() {{
+                    const storageKey = 'streamlit_audio_pending_{recording_key}';
+                    const audioData = sessionStorage.getItem(storageKey);
+                    
+                    if (audioData) {{
+                        console.log('Found audio in sessionStorage, trying to set input...');
+                        const inputKey = '{audio_base64_key}';
+                        const inputs = document.querySelectorAll('input[type="text"]');
+                        
+                        for (let input of inputs) {{
+                            const inputId = (input.id || '').toLowerCase();
+                            const inputName = (input.name || '').toLowerCase();
+                            
+                            if (inputId.includes(inputKey.toLowerCase()) || 
+                                inputName.includes(inputKey.toLowerCase()) ||
+                                input.value === '') {{
+                                
+                                input.value = audioData;
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                
+                                // Clear from storage
+                                sessionStorage.removeItem(storageKey);
+                                
+                                // Trigger rerun
+                                setTimeout(() => {{
+                                    window.location.reload();
+                                }}, 300);
+                                
+                                break;
+                            }}
+                        }}
+                    }}
+                }})();
+            </script>
+            """
+            components.html(check_storage_js, height=0)
+        
         # Store in session state
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
