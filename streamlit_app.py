@@ -591,8 +591,9 @@ def show_testing_interface():
                 # Clear previous attempt's state
                 old_recording_key = f"recording_{crop_index}_attempt_{current_attempt_num}"
                 old_audio_submitted_key = f"audio_submitted_{old_recording_key}"
-                for key in [f'audio_base64_{old_recording_key}', f'audio_processed_{old_recording_key}', 
-                           f'asr_result_{old_recording_key}', old_audio_submitted_key]:
+                keys_to_clear = [f'audio_upload_{old_recording_key}', f'audio_processed_{old_recording_key}', 
+                               f'asr_result_{old_recording_key}', old_audio_submitted_key]
+                for key in keys_to_clear:
                     if key in st.session_state:
                         del st.session_state[key]
             st.query_params.pop('increment_attempt', None)
