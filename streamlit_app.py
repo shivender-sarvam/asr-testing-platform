@@ -277,7 +277,15 @@ def show_login_page():
     # Google OAuth Login
     config = get_google_config()
     
-    if config['client_id'] != 'your-google-client-id':
+    # Debug: Show what we're using (first few chars only for security)
+    with st.expander("🔍 Debug OAuth Config", expanded=False):
+        st.write(f"Client ID: {config['client_id'][:20]}..." if len(config['client_id']) > 20 else f"Client ID: {config['client_id']}")
+        st.write(f"Redirect URI: {config['redirect_uri']}")
+        st.write(f"Client ID length: {len(config['client_id'])}")
+    
+    if config['client_id'] != 'your-google-client-id' and config['client_id']:
+        # URL encode the redirect URI
+        redirect_uri_encoded = urlencode({'': config['redirect_uri']})[1:] if config['redirect_uri'] else ''
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={config['client_id']}&redirect_uri={config['redirect_uri']}&scope=openid%20email%20profile&response_type=code"
         
         st.markdown(f"""
@@ -286,7 +294,16 @@ def show_login_page():
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.error("Google OAuth not configured. Please set GOOGLE_ID and GOOGLE_SECRET environment variables.")
+        st.error("Google OAuth not configured. Please set GOOGLE_ID and GOOGLE_SECRET in Streamlit secrets.")
+        st.info("""
+        **To fix this:**
+        1. Go to Streamlit Cloud → Settings → Secrets
+        2. Make sure you have:
+           - `GOOGLE_ID` = your Google OAuth Client ID
+           - `GOOGLE_SECRET` = your Google OAuth Client Secret
+           - `GOOGLE_REDIRECT_URI` = https://asr-testing-platform.streamlit.app/
+        3. Make sure the redirect URI matches exactly in Google Cloud Console
+        """)
     
     st.markdown("""
     <div style="text-align: center; margin-top: 2rem;">
