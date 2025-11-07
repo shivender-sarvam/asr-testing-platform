@@ -590,6 +590,7 @@ def show_testing_interface():
                     
                     result = {
                         "qa_name": st.session_state.qa_name,
+                        "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
                         "crop_name": crop_name,
                         "crop_code": crop_code,
                         "language": language,
