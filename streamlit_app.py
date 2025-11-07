@@ -710,96 +710,88 @@ def show_testing_interface():
                             window.streamlitAudioData[key] = base64Audio;
                             console.log('Audio stored in window.streamlitAudioData[' + key + ']');
                             
-                            // Try to update Streamlit input - VERY AGGRESSIVE
-                            function updateStreamlitInput(attempt = 0) {{
-                                if (attempt > 20) {{
-                                    console.error('Failed to find input after 20 attempts');
-                                    alert('Audio recorded but could not send to Streamlit. Please refresh the page.');
-                                    return;
-                                }}
+                            // Send to Streamlit using postMessage API
+                            // Streamlit components can receive messages via window.addEventListener
+                            if (window.parent && window.parent !== window) {{
+                                // Try Streamlit's component communication
+                                window.parent.postMessage({{
+                                    type: 'streamlit:setFrameHeight',
+                                    height: 300
+                                }}, '*');
                                 
+                                // Also try to find and update the input directly
                                 const inputKey = 'audio_base64_' + key;
-                                console.log('Attempt ' + attempt + ': Looking for input with key:', inputKey);
+                                let attempts = 0;
+                                const maxAttempts = 50;
                                 
-                                // Try multiple selectors
-                                let inputs = [];
-                                
-                                // Method 1: All text inputs in parent
-                                if (window.parent && window.parent.document) {{
-                                    inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                    console.log('Found ' + inputs.length + ' text inputs in parent');
-                                }}
-                                
-                                // Method 2: All inputs
-                                if (inputs.length === 0 && window.parent && window.parent.document) {{
-                                    inputs = window.parent.document.querySelectorAll('input');
-                                    console.log('Found ' + inputs.length + ' total inputs in parent');
-                                }}
-                                
-                                // Method 3: Try top window
-                                if (inputs.length === 0 && window.top && window.top.document) {{
-                                    inputs = window.top.document.querySelectorAll('input[type="text"]');
-                                    console.log('Found ' + inputs.length + ' text inputs in top window');
-                                }}
-                                
-                                let found = false;
-                                for (let input of inputs) {{
-                                    const inputId = input.id || '';
-                                    const inputName = input.name || '';
-                                    const inputKeyAttr = input.getAttribute('data-base-input') || '';
-                                    const inputValue = input.value || '';
-                                    
-                                    console.log('Checking input:', {{ id: inputId, name: inputName, keyAttr: inputKeyAttr, valueLength: inputValue.length }});
-                                    
-                                    // Check if this is our input (empty or matches key)
-                                    if (inputId.includes(inputKey) || 
-                                        inputName.includes(inputKey) ||
-                                        inputKeyAttr === inputKey ||
-                                        (inputValue === '' && !found)) {{
-                                        
-                                        input.value = base64Audio;
-                                        input.setAttribute('data-base-input', inputKey);
-                                        
-                                        // Trigger all possible events
-                                        ['input', 'change', 'keyup', 'blur'].forEach(eventType => {{
-                                            input.dispatchEvent(new Event(eventType, {{ bubbles: true, cancelable: true }}));
-                                        }});
-                                        
-                                        // Also try InputEvent
-                                        try {{
-                                            input.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: base64Audio }}));
-                                        }} catch(e) {{
-                                            console.log('InputEvent not supported');
-                                        }}
-                                        
-                                        found = true;
-                                        console.log('✅ SUCCESS: Updated input field!', {{ id: inputId, name: inputName }});
-                                        
-                                        // Force Streamlit to notice by clicking a button or triggering rerun
-                                        setTimeout(() => {{
-                                            // Try to find and click a button to trigger rerun
-                                            const buttons = window.parent.document.querySelectorAll('button');
-                                            for (let btn of buttons) {{
-                                                if (btn.textContent.includes('Rerun') || btn.getAttribute('data-testid') === 'baseButton-secondary') {{
-                                                    console.log('Clicking rerun button');
-                                                    btn.click();
-                                                    break;
-                                                }}
-                                            }}
-                                        }}, 100);
-                                        
-                                        break;
+                                function findAndUpdateInput() {{
+                                    attempts++;
+                                    if (attempts > maxAttempts) {{
+                                        console.error('Could not find Streamlit input after ' + maxAttempts + ' attempts');
+                                        return;
                                     }}
+                                    
+                                    // Try to find input in parent document
+                                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                    console.log('Looking for input, found ' + inputs.length + ' text inputs');
+                                    
+                                    for (let input of inputs) {{
+                                        // Check if input is empty or matches our key
+                                        const inputId = (input.id || '').toLowerCase();
+                                        const inputName = (input.name || '').toLowerCase();
+                                        const inputValue = input.value || '';
+                                        
+                                        if (inputId.includes(inputKey.toLowerCase()) || 
+                                            inputName.includes(inputKey.toLowerCase()) ||
+                                            (inputValue === '' && attempts < 10)) {{
+                                            
+                                            console.log('Found input! Setting value...');
+                                            input.value = base64Audio;
+                                            input.focus();
+                                            input.blur();
+                                            
+                                            // Trigger events
+                                            ['input', 'change', 'keyup', 'blur', 'focus'].forEach(eventType => {{
+                                                const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                                                input.dispatchEvent(event);
+                                            }});
+                                            
+                                            // Try to trigger Streamlit rerun by simulating user interaction
+                                            setTimeout(() => {{
+                                                // Look for any button and click it to trigger rerun
+                                                const allButtons = window.parent.document.querySelectorAll('button');
+                                                console.log('Found ' + allButtons.length + ' buttons, looking for one to click...');
+                                                
+                                                // Try to find a button that might trigger rerun
+                                                for (let btn of allButtons) {{
+                                                    const btnText = (btn.textContent || '').toLowerCase();
+                                                    if (btnText.includes('rerun') || btnText.includes('update') || btn.getAttribute('data-testid')) {{
+                                                        console.log('Clicking button to trigger rerun');
+                                                        btn.click();
+                                                        break;
+                                                    }}
+                                                }}
+                                                
+                                                // Also try location.reload as last resort
+                                                setTimeout(() => {{
+                                                    if (input.value === base64Audio) {{
+                                                        console.log('Input value set, triggering page reload to update Streamlit');
+                                                        window.parent.location.reload();
+                                                    }}
+                                                }}, 500);
+                                            }}, 200);
+                                            
+                                            return;
+                                        }}
+                                    }}
+                                    
+                                    // Retry
+                                    setTimeout(findAndUpdateInput, 100);
                                 }}
                                 
-                                if (!found) {{
-                                    console.log('Input not found, retrying in ' + (attempt * 100 + 100) + 'ms...');
-                                    setTimeout(() => updateStreamlitInput(attempt + 1), attempt * 100 + 100);
-                                }}
+                                // Start looking for input
+                                setTimeout(findAndUpdateInput, 100);
                             }}
-                            
-                            // Start trying immediately
-                            updateStreamlitInput(0);
                         }};
                         reader.readAsDataURL(audioBlob);
                         
@@ -839,26 +831,31 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # File uploader for audio - JavaScript will download file, user uploads it
-        st.markdown("---")
-        st.markdown("**After recording, download the audio file above, then upload it here:**")
-        uploaded_audio = st.file_uploader(
-            "Upload Recorded Audio",
-            type=['webm', 'wav', 'mp3', 'ogg'],
-            key=f"audio_upload_{recording_key}",
-            help="Download the audio file from the recorder above, then upload it here"
+        # Hidden text input for JavaScript to populate with base64 audio
+        audio_base64 = st.text_input(
+            "Audio Data",
+            key=f"audio_base64_{recording_key}",
+            label_visibility="collapsed",
+            value="",
+            help="Hidden input for audio data"
         )
         
-        # Process uploaded audio
-        if uploaded_audio is not None:
+        # Auto-process when audio_base64 is received
+        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
                 try:
-                    audio_bytes = uploaded_audio.read()
+                    # Extract base64 part after comma
+                    if ',' in audio_base64:
+                        base64_data = audio_base64.split(',')[1]
+                        mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
+                    else:
+                        base64_data = audio_base64
+                        mime_type = 'audio/webm'
+                    
+                    audio_bytes = base64.b64decode(base64_data)
                     
                     # Convert webm to wav if needed
                     audio_format = 'wav'
-                    mime_type = uploaded_audio.type or 'audio/webm'
-                    
                     if 'webm' in mime_type.lower():
                         try:
                             from pydub import AudioSegment
@@ -877,13 +874,15 @@ def show_testing_interface():
                     st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
                     st.session_state[f'audio_format_{recording_key}'] = audio_format
                     st.session_state[f'audio_stored_{recording_key}'] = True
-                    st.success("✅ Audio uploaded and stored!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
         
-        # DEBUG: Show upload status
-        st.info(f"📤 Upload status: {'✅ Audio uploaded!' if uploaded_audio else '⏳ Waiting for audio upload...'}")
+        # Auto-rerun to check for audio (polling mechanism)
+        if not st.session_state.get(f'audio_stored_{recording_key}', False):
+            import time
+            time.sleep(0.5)  # Small delay to allow JavaScript to update
+            st.rerun()
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
