@@ -576,8 +576,8 @@ def show_testing_interface():
         # Custom Audio Recorder HTML Component
         # Use string replacement to avoid format string issues
         audio_recorder_html_template = """
-        <div id="audio-recorder-RECORDING_KEY" style="text-align: center; padding: 20px;">
-            <button id="startBtn-RECORDING_KEY" onclick="startRecording_RECORDING_KEY()" style="
+        <div id="audio-recorder-PLACEHOLDER_KEY" style="text-align: center; padding: 20px;">
+            <button id="startBtn-PLACEHOLDER_KEY" style="
                 background: #1e3c72;
                 color: white;
                 border: none;
@@ -588,7 +588,7 @@ def show_testing_interface():
                 margin: 5px;
             ">🎤 Start Recording</button>
             
-            <button id="stopBtn-RECORDING_KEY" onclick="stopRecording_RECORDING_KEY()" disabled style="
+            <button id="stopBtn-PLACEHOLDER_KEY" disabled style="
                 background: #dc3545;
                 color: white;
                 border: none;
@@ -600,14 +600,14 @@ def show_testing_interface():
                 opacity: 0.5;
             ">⏹️ Stop Recording</button>
             
-            <div id="status-RECORDING_KEY" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
+            <div id="status-PLACEHOLDER_KEY" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
                 🔴 Recording... Speak clearly!
             </div>
             
-            <div id="playback-RECORDING_KEY" style="margin: 20px 0; display: none;">
+            <div id="playback-PLACEHOLDER_KEY" style="margin: 20px 0; display: none;">
                 <p style="color: #28a745; font-weight: bold;">✅ Recording completed! Listen to your recording:</p>
-                <audio id="audioPlayer-RECORDING_KEY" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
-                <a id="downloadLink-RECORDING_KEY" download="recording.wav" style="
+                <audio id="audioPlayer-PLACEHOLDER_KEY" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
+                <a id="downloadLink-PLACEHOLDER_KEY" download="recording.wav" style="
                     display: inline-block;
                     background: #28a745;
                     color: white;
@@ -621,24 +621,21 @@ def show_testing_interface():
         
         <script>
         (function() {{
-            const key = 'RECORDING_KEY';
-            let mediaRecorder_RECORDING_KEY = null;
-            let audioChunks_RECORDING_KEY = [];
-            let audioBlob_RECORDING_KEY = null;
-            let stream_RECORDING_KEY = null;
+            const key = 'PLACEHOLDER_KEY';
+            let mediaRecorder;
+            let audioChunks = [];
+            let audioBlob = null;
             
-            // Global functions for onclick handlers
-            window.startRecording_RECORDING_KEY = async function() {{
-                console.log('Start button clicked for key:', key);
-                const startBtn = document.getElementById('startBtn-' + key);
-                const stopBtn = document.getElementById('stopBtn-' + key);
-                const statusDiv = document.getElementById('status-' + key);
-                const playbackDiv = document.getElementById('playback-' + key);
-                const audioPlayer = document.getElementById('audioPlayer-' + key);
-                const downloadLink = document.getElementById('downloadLink-' + key);
-                
+            const startBtn = document.getElementById('startBtn-' + key);
+            const stopBtn = document.getElementById('stopBtn-' + key);
+            const statusDiv = document.getElementById('status-' + key);
+            const playbackDiv = document.getElementById('playback-' + key);
+            const audioPlayer = document.getElementById('audioPlayer-' + key);
+            const downloadLink = document.getElementById('downloadLink-' + key);
+            
+            startBtn.addEventListener('click', async function() {{
                 try {{
-                    stream_RECORDING_KEY = await navigator.mediaDevices.getUserMedia({{
+                    const stream = await navigator.mediaDevices.getUserMedia({{
                         audio: {{
                             sampleRate: 16000,
                             channelCount: 1,
@@ -646,141 +643,85 @@ def show_testing_interface():
                             noiseSuppression: true
                         }}
                     }});
-                    console.log('Microphone access granted');
                     
                     let mimeType = 'audio/webm';
                     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {{
                         mimeType = 'audio/webm;codecs=opus';
                     }}
                     
-                    mediaRecorder_RECORDING_KEY = new MediaRecorder(stream_RECORDING_KEY, {{ mimeType: mimeType }});
-                    audioChunks_RECORDING_KEY = [];
+                    mediaRecorder = new MediaRecorder(stream, {{ mimeType: mimeType }});
+                    audioChunks = [];
                     
-                    mediaRecorder_RECORDING_KEY.ondataavailable = function(event) {{
+                    mediaRecorder.ondataavailable = function(event) {{
                         if (event.data.size > 0) {{
-                            audioChunks_RECORDING_KEY.push(event.data);
+                            audioChunks.push(event.data);
                         }}
                     }};
                     
-                    mediaRecorder_RECORDING_KEY.onstop = async function() {{
-                        audioBlob_RECORDING_KEY = new Blob(audioChunks_RECORDING_KEY, {{ type: mimeType }});
-                        const audioUrl = URL.createObjectURL(audioBlob_RECORDING_KEY);
-                        if (audioPlayer) audioPlayer.src = audioUrl;
-                        if (downloadLink) downloadLink.href = audioUrl;
-                        if (playbackDiv) playbackDiv.style.display = 'block';
+                    mediaRecorder.onstop = async function() {{
+                        audioBlob = new Blob(audioChunks, {{ type: mimeType }});
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        audioPlayer.src = audioUrl;
+                        downloadLink.href = audioUrl;
+                        playbackDiv.style.display = 'block';
                         
                         // Automatically convert to base64 and send to Streamlit
                         const reader = new FileReader();
                         reader.onloadend = function() {{
                             const base64Audio = reader.result;
                             
-                            // Store in window for debugging
+                            // Find the hidden text input and set its value
+                            const inputId = 'audio_base64_PLACEHOLDER_KEY';
+                            const input = window.parent.document.querySelector('input[data-testid*="' + inputId + '"]') ||
+                                         window.parent.document.querySelector('input[aria-label*="Audio Data"]') ||
+                                         window.parent.document.querySelector('input[type="text"]');
+                            
+                            if (input) {{
+                                input.value = base64Audio;
+                                // Trigger input event so Streamlit detects the change
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                            
+                            // Also store in window for backup
                             window['audioData_' + key] = base64Audio;
-                            console.log('Audio converted to base64, length:', base64Audio.length);
-                            
-                            // Find the Streamlit text input and update it
-                            function updateStreamlitInput() {{
-                                const inputKey = 'audio_base64_' + key;
-                                let input = null;
-                                
-                                // Try to find by key attribute
-                                const allInputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                for (let inp of allInputs) {{
-                                    const testId = inp.getAttribute('data-testid') || '';
-                                    const ariaLabel = inp.getAttribute('aria-label') || '';
-                                    if (testId.includes(inputKey) || ariaLabel.includes('Audio Data')) {{
-                                        input = inp;
-                                        break;
-                                    }}
-                                }}
-                                
-                                // If not found, try the last empty input
-                                if (!input) {{
-                                    for (let inp of allInputs) {{
-                                        if (inp.value === '' || inp.value.length < 100) {{
-                                            input = inp;
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                if (input) {{
-                                    input.value = base64Audio;
-                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    console.log('Audio data sent to Streamlit input');
-                                    
-                                    // Trigger Streamlit rerun
-                                    setTimeout(function() {{
-                                        window.parent.postMessage({{
-                                            type: 'streamlit:setComponentValue',
-                                            value: base64Audio
-                                        }}, '*');
-                                    }}, 100);
-                                }} else {{
-                                    console.error('Could not find Streamlit input to update');
-                                }}
-                            }};
-                            
-                            // Try immediately and also after a delay
-                            updateStreamlitInput();
-                            setTimeout(updateStreamlitInput, 200);
-                            setTimeout(updateStreamlitInput, 500);
                         }};
-                        reader.readAsDataURL(audioBlob_RECORDING_KEY);
+                        reader.readAsDataURL(audioBlob);
                         
-                        if (stream_RECORDING_KEY) {{
-                            stream_RECORDING_KEY.getTracks().forEach(track => track.stop());
-                        }}
+                        stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    mediaRecorder_RECORDING_KEY.start(100);
-                    if (startBtn) {{
-                        startBtn.disabled = true;
-                        startBtn.style.opacity = '0.5';
-                        startBtn.style.cursor = 'not-allowed';
-                    }}
-                    if (stopBtn) {{
-                        stopBtn.disabled = false;
-                        stopBtn.style.opacity = '1';
-                        stopBtn.style.cursor = 'pointer';
-                    }}
-                    if (statusDiv) statusDiv.style.display = 'block';
+                    mediaRecorder.start(100);
+                    startBtn.disabled = true;
+                    startBtn.style.opacity = '0.5';
+                    startBtn.style.cursor = 'not-allowed';
+                    stopBtn.disabled = false;
+                    stopBtn.style.opacity = '1';
+                    stopBtn.style.cursor = 'pointer';
+                    statusDiv.style.display = 'block';
                     
                 }} catch (error) {{
                     alert('Error accessing microphone: ' + error.message);
-                    console.error('Microphone error:', error);
                 }}
-            }};
+            }});
             
-            window.stopRecording_RECORDING_KEY = function() {{
-                console.log('Stop button clicked for key:', key);
-                const startBtn = document.getElementById('startBtn-' + key);
-                const stopBtn = document.getElementById('stopBtn-' + key);
-                const statusDiv = document.getElementById('status-' + key);
-                
-                if (mediaRecorder_RECORDING_KEY && mediaRecorder_RECORDING_KEY.state === 'recording') {{
-                    mediaRecorder_RECORDING_KEY.stop();
-                    if (startBtn) {{
-                        startBtn.disabled = false;
-                        startBtn.style.opacity = '1';
-                        startBtn.style.cursor = 'pointer';
-                    }}
-                    if (stopBtn) {{
-                        stopBtn.disabled = true;
-                        stopBtn.style.opacity = '0.5';
-                        stopBtn.style.cursor = 'not-allowed';
-                    }}
-                    if (statusDiv) statusDiv.style.display = 'none';
+            stopBtn.addEventListener('click', function() {{
+                if (mediaRecorder && mediaRecorder.state === 'recording') {{
+                    mediaRecorder.stop();
+                    startBtn.disabled = false;
+                    startBtn.style.opacity = '1';
+                    startBtn.style.cursor = 'pointer';
+                    stopBtn.disabled = true;
+                    stopBtn.style.opacity = '0.5';
+                    stopBtn.style.cursor = 'not-allowed';
+                    statusDiv.style.display = 'none';
                 }}
-            }};
-            
-            console.log('Audio recorder functions initialized for key:', key);
+            }});
         }})();
         </script>
         """
         # Replace placeholder with actual recording key
-        audio_recorder_html = audio_recorder_html_template.replace('RECORDING_KEY', recording_key)
+        audio_recorder_html = audio_recorder_html_template.replace('PLACEHOLDER_KEY', recording_key)
         
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
