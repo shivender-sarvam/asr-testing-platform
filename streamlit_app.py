@@ -824,38 +824,68 @@ def show_testing_interface():
             st.warning(f"Error reading query params: {e}")
             audio_key_from_url = None
         
-        # If we got a storage key, inject JavaScript to read from sessionStorage
-        audio_base64 = None
-        if audio_key_from_url:
-            # Inject JavaScript to read from sessionStorage and put in a hidden input
+        # Create input field FIRST (before JavaScript injection)
+        audio_base64_key = f"audio_base64_{recording_key}"
+        audio_base64 = st.text_input(
+            "Audio from storage",
+            key=audio_base64_key,
+            label_visibility="collapsed",
+            value=st.session_state.get(audio_base64_key, ""),
+            help="Hidden input for audio from sessionStorage"
+        )
+        
+        # If we got a storage key, inject JavaScript to read from sessionStorage and update the input
+        if audio_key_from_url and not audio_base64:
+            # Inject JavaScript to read from sessionStorage and update the Streamlit input
             read_audio_js = f"""
             <script>
                 (function() {{
                     const storageKey = '{audio_key_from_url}';
+                    const inputKey = '{audio_base64_key}';
                     const audioData = sessionStorage.getItem(storageKey);
                     
                     if (audioData) {{
                         console.log('✅ Found audio in sessionStorage, length:', audioData.length);
                         
-                        // Create hidden input with audio data
-                        let input = document.getElementById('audio_input_streamlit');
-                        if (!input) {{
-                            input = document.createElement('input');
-                            input.type = 'hidden';
-                            input.id = 'audio_input_streamlit';
-                            input.name = 'audio_data';
-                            document.body.appendChild(input);
-                        }}
-                        input.value = audioData;
+                        // Find the Streamlit input field and update it
+                        function updateStreamlitInput() {{
+                            const inputs = document.querySelectorAll('input[type="text"]');
+                            console.log('Looking for input, found ' + inputs.length + ' inputs');
+                            
+                            for (let input of inputs) {{
+                                const inputId = (input.id || '').toLowerCase();
+                                const inputName = (input.name || '').toLowerCase();
+                                
+                                // Check if this is our input
+                                if (inputId.includes(inputKey.toLowerCase()) || 
+                                    inputName.includes(inputKey.toLowerCase()) ||
+                                    input.value === '') {{
+                                    
+                                    console.log('✅ Found Streamlit input! Setting value...');
+                                    input.value = audioData;
+                                    
+                                    // Trigger events to notify Streamlit
+                                    ['input', 'change'].forEach(eventType => {{
+                                        input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
+                                    }});
+                                    
+                                    // Clean up
+                                    sessionStorage.removeItem(storageKey);
+                                    
+                                    // Trigger page reload to make Streamlit read the value
+                                    setTimeout(() => {{
+                                        window.location.reload();
+                                    }}, 300);
+                                    
+                                    return;
+                                }}
+                            }}
+                            
+                            // Retry if not found
+                            setTimeout(updateStreamlitInput, 100);
+                        }};
                         
-                        // Also store in window for Streamlit to access
-                        window.streamlitAudioData = audioData;
-                        
-                        // Trigger a custom event
-                        window.dispatchEvent(new CustomEvent('streamlitAudioReady', {{ detail: audioData }}));
-                        
-                        // Clean up
-                        sessionStorage.removeItem(storageKey);
+                        updateStreamlitInput();
                     }} else {{
                         console.error('❌ Audio not found in sessionStorage for key:', storageKey);
                     }}
@@ -864,26 +894,10 @@ def show_testing_interface():
             """
             components.html(read_audio_js, height=0)
             
-            # Try to read from a hidden input that JavaScript will create
-            # We'll use a text input that JavaScript populates
-            audio_base64_key = f"audio_base64_{recording_key}"
-            audio_base64 = st.text_input(
-                "Audio from storage",
-                key=audio_base64_key,
-                label_visibility="collapsed",
-                value="",
-                help="Hidden input for audio from sessionStorage"
-            )
-            
-            # If still empty, rerun to give JavaScript time to set it
-            if not audio_base64:
-                import time
-                time.sleep(0.5)
-                st.rerun()
-        else:
-            # Check session state
-            audio_base64_key = f"audio_base64_{recording_key}"
-            audio_base64 = st.session_state.get(audio_base64_key, "")
+            # Give JavaScript time to set the value, then rerun
+            import time
+            time.sleep(0.3)
+            st.rerun()
         
         # Store in session state
         if audio_base64:
