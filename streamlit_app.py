@@ -671,7 +671,7 @@ def show_testing_interface():
                             const base64Audio = reader.result;
                             
                             // Find the hidden text input and set its value
-                            const inputId = 'audio_base64_PLACEHOLDER_KEY';
+                            const inputId = 'audio_base64_' + key;
                             const input = window.parent.document.querySelector('input[data-testid*="' + inputId + '"]') ||
                                          window.parent.document.querySelector('input[aria-label*="Audio Data"]') ||
                                          window.parent.document.querySelector('input[type="text"]');
