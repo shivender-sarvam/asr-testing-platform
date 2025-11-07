@@ -876,9 +876,10 @@ def show_testing_interface():
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
         
-        # Auto-process when audio_base64 is received
+        # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
+                # Audio detected! Process it immediately (no waiting)
                 try:
                     # Extract base64 part after comma
                     if ',' in audio_base64:
@@ -910,51 +911,10 @@ def show_testing_interface():
                     st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
                     st.session_state[f'audio_format_{recording_key}'] = audio_format
                     st.session_state[f'audio_stored_{recording_key}'] = True
+                    st.success("✅ Audio received and stored!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error storing audio: {e}")
-        
-        # Auto-process: Check if audio_base64 was set by JavaScript and process immediately
-        # Use a polling mechanism - if audio_base64 exists but not stored, process it
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            if not st.session_state.get(f'audio_stored_{recording_key}', False):
-                # Audio detected! Process it immediately
-                with st.spinner("🔄 Processing audio..."):
-                    try:
-                        # Extract base64 part after comma
-                        if ',' in audio_base64:
-                            base64_data = audio_base64.split(',')[1]
-                            mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
-                        else:
-                            base64_data = audio_base64
-                            mime_type = 'audio/webm'
-                        
-                        audio_bytes = base64.b64decode(base64_data)
-                        
-                        # Convert webm to wav if needed
-                        audio_format = 'wav'
-                        if 'webm' in mime_type.lower():
-                            try:
-                                from pydub import AudioSegment
-                                import io
-                                audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
-                                audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-                                wav_buffer = io.BytesIO()
-                                audio_segment.export(wav_buffer, format="wav")
-                                audio_bytes = wav_buffer.getvalue()
-                                audio_format = 'wav'
-                            except Exception as e:
-                                st.warning(f"Could not convert webm to wav: {e}. Using original format.")
-                                audio_format = 'webm'
-                        
-                        # Store audio for later processing
-                        st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
-                        st.session_state[f'audio_format_{recording_key}'] = audio_format
-                        st.session_state[f'audio_stored_{recording_key}'] = True
-                        st.success("✅ Audio received and stored!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error processing audio: {e}")
+                    st.error(f"Error processing audio: {e}")
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
