@@ -876,6 +876,14 @@ def show_testing_interface():
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
         
+        # Auto-refresh to detect audio immediately (polling mechanism)
+        # Check if audio was submitted but not yet processed
+        if not st.session_state.get(f'audio_stored_{recording_key}', False):
+            # Use auto-refresh to check for audio every 1 second
+            import time
+            time.sleep(1)
+            st.rerun()
+        
         # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
