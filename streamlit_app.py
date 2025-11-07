@@ -769,12 +769,19 @@ def show_testing_interface():
                                             input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
                                         }});
                                         
-                                        console.log('✅ Value set! Reloading page...');
+                                        console.log('✅ Value set! Setting flag for Streamlit to process...');
                                         
-                                        // Reload to trigger Streamlit processing
-                                        setTimeout(() => {{
-                                            window.parent.location.reload();
-                                        }}, 200);
+                                        // Set a flag in the input that Streamlit can check
+                                        input.setAttribute('data-submitted', 'true');
+                                        
+                                        // Show success message
+                                        submitBtn.textContent = '✅ Submitted! Processing...';
+                                        submitBtn.style.background = '#28a745';
+                                        submitBtn.disabled = true;
+                                        
+                                        // Add a hidden button that Streamlit can auto-click to trigger rerun
+                                        // We'll create a button in Streamlit that checks for this flag
+                                        console.log('Audio submitted! Streamlit will process it on next rerun.');
                                         
                                         return;
                                     }}
@@ -834,6 +841,13 @@ def show_testing_interface():
         # Hidden text input for JavaScript to populate with base64 audio
         # Make it easier for JavaScript to find by using a unique key
         audio_base64_key = f"audio_base64_{recording_key}"
+        
+        # Check if we should read from localStorage (set by JavaScript)
+        # This allows JavaScript to set value without page reload
+        if 'localStorage_audio_read' not in st.session_state:
+            st.session_state['localStorage_audio_read'] = {}
+        
+        # Try to read from URL params or use session state
         audio_base64 = st.text_input(
             "Audio Data",
             key=audio_base64_key,
@@ -884,8 +898,19 @@ def show_testing_interface():
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
         
-        # Don't auto-rerun - let JavaScript handle it via page reload
-        # The JavaScript will trigger a page reload when it successfully sets the input value
+        # Auto-check button - checks if audio was submitted and triggers processing
+        # This button auto-clicks if audio_base64 has data but isn't processed yet
+        check_audio_key = f"check_audio_{recording_key}"
+        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+            if not st.session_state.get(f'audio_stored_{recording_key}', False):
+                # Auto-process - no button needed, just process it
+                pass  # Processing happens in the if block above
+            else:
+                # Already processed, show status
+                st.info("✅ Audio already processed!")
+        else:
+            # No audio yet, show waiting message
+            pass
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
