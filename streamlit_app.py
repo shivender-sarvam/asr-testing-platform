@@ -1193,13 +1193,31 @@ def show_testing_interface():
             session_id = st.session_state.session_id
             filename = f"asr_test_results_{email}_{language}_{session_id}_{timestamp}.csv"
             
-            st.download_button(
-                label="📥 Download Results CSV",
-                data=csv,
-                file_name=filename,
-                mime="text/csv",
-                type="primary"
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="📥 Download Results CSV",
+                    data=csv,
+                    file_name=filename,
+                    mime="text/csv",
+                    type="primary",
+                    use_container_width=True
+                )
+            
+            # Upload final results to Azure (like Flask)
+            with col2:
+                if AZURE_AVAILABLE and st.button("☁️ Upload to Azure", type="secondary", use_container_width=True):
+                    try:
+                        user_email = st.session_state.user_info.get('email', 'unknown@example.com') if st.session_state.user_info else 'unknown@example.com'
+                        azure_url = upload_asr_test_results(
+                            test_results=st.session_state.test_results,
+                            user_email=user_email,
+                            language=language,
+                            session_id=session_id
+                        )
+                        st.success(f"✅ Uploaded to Azure: {azure_url}")
+                    except Exception as e:
+                        st.error(f"❌ Azure upload failed: {e}")
         else:
             st.warning("⚠️ No test results found. Please complete at least one test.")
         
