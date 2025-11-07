@@ -1148,7 +1148,8 @@ def show_testing_interface():
                     if uploaded_audio:
                         st.write("**Audio File Info:**")
                         audio_size = len(audio_bytes) if 'audio_bytes' in locals() else 'N/A'
-                        st.code(f"Name: {uploaded_audio.name}\nSize: {audio_size} bytes\nType: {uploaded_audio.type}", language='text')
+                        conversion_status = st.session_state.get(f'_conversion_status_{recording_key}', 'Unknown')
+                        st.code(f"Name: {uploaded_audio.name}\nSize: {audio_size} bytes\nType: {uploaded_audio.type}\nConversion: {conversion_status}", language='text')
                     
                     # Show what was actually sent to API
                     st.write("**Request Details:**")
