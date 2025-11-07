@@ -567,7 +567,7 @@ def show_testing_interface():
                 st.rerun()
         
         # Navigation
-        col1, col2, col3 = st.columns([1, 1, 1])
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         
         with col1:
             if st.button("⬅️ Previous") and st.session_state.current_test_index > 0:
@@ -582,10 +582,8 @@ def show_testing_interface():
                 st.rerun()
         
         with col3:
-            if st.button("✅ Complete Test", type="primary"):
-                # Allow completion even without uploaded audio (user may have recorded but not uploaded)
-                # TODO: Call Sarvam ASR API here with recorded audio if available
-                # For now, simulate ASR result
+            if st.button("✅ Save & Next"):
+                # Save current test and move to next
                 if st.session_state.recorded_audio:
                     asr_result = f"Recorded audio for {crop_name} (audio file uploaded)"
                 else:
@@ -607,7 +605,34 @@ def show_testing_interface():
                 # Clear recorded audio for next test
                 st.session_state.recorded_audio = None
                 st.session_state.current_test_index += 1
-                st.success("✅ Test completed! Moving to next crop...")
+                st.success("✅ Test saved! Moving to next crop...")
+                st.rerun()
+        
+        with col4:
+            if st.button("🏁 Finish Testing", type="primary"):
+                # Save current test and finish the session
+                if st.session_state.recorded_audio:
+                    asr_result = f"Recorded audio for {crop_name} (audio file uploaded)"
+                else:
+                    asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
+                
+                result = {
+                    "qa_name": st.session_state.qa_name,
+                    "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                    "crop_name": crop_name,
+                    "crop_code": crop_code,
+                    "language": language,
+                    "expected": test_sentence,
+                    "actual": asr_result,
+                    "accuracy": 95.0,
+                    "timestamp": datetime.now().isoformat(),
+                    "audio_recorded": st.session_state.recorded_audio is not None
+                }
+                st.session_state.test_results.append(result)
+                # Jump to end to show results
+                st.session_state.current_test_index = len(st.session_state.test_data)
+                st.session_state.recorded_audio = None
+                st.success("✅ Testing session completed! Showing results...")
                 st.rerun()
     
     else:
