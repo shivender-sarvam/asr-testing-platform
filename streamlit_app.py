@@ -8,6 +8,7 @@ import re
 import requests
 import os
 from urllib.parse import urlencode
+from audio_recorder_streamlit import audio_recorder
 
 # Page config
 st.set_page_config(
@@ -94,6 +95,10 @@ if 'current_test_index' not in st.session_state:
     st.session_state.current_test_index = 0
 if 'test_results' not in st.session_state:
     st.session_state.test_results = []
+if 'recorded_audio' not in st.session_state:
+    st.session_state.recorded_audio = None
+if 'is_recording' not in st.session_state:
+    st.session_state.is_recording = False
 
 # Google OAuth Configuration - will be read in functions
 def get_google_config():
@@ -375,16 +380,36 @@ def show_testing_interface():
         test_sentence = f"Please say {crop_name}"
         st.markdown(f"**Say this sentence:** \"{test_sentence}\"")
         
-        # Recording interface
-        col1, col2 = st.columns([1, 1])
+        # Audio Recording Component
+        st.markdown("### 🎤 Record Audio")
+        st.markdown("Click the microphone button below to start recording. Click again to stop.")
         
-        with col1:
-            if st.button("🎤 Start Recording", type="primary"):
-                st.info("Recording started... (This is a demo - actual recording would be implemented)")
+        # Create unique key for this crop's recording
+        recording_key = f"recording_{st.session_state.current_test_index}"
         
-        with col2:
-            if st.button("⏹️ Stop Recording"):
-                st.success("Recording completed!")
+        # Use audio_recorder component
+        audio_bytes = audio_recorder(
+            text="",
+            recording_color="#dc3545",
+            neutral_color="#1e3c72",
+            icon_name="microphone",
+            icon_size="2x",
+            key=recording_key
+        )
+        
+        # Store and display recorded audio
+        if audio_bytes:
+            st.session_state.recorded_audio = audio_bytes
+            st.success("✅ Recording completed!")
+            
+            # Display audio player
+            st.markdown("### 🔊 Listen to Your Recording")
+            st.audio(audio_bytes, format="audio/wav")
+            
+            # Option to record again
+            if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
+                st.session_state.recorded_audio = None
+                st.rerun()
         
         # Navigation
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -392,29 +417,41 @@ def show_testing_interface():
         with col1:
             if st.button("⬅️ Previous") and st.session_state.current_test_index > 0:
                 st.session_state.current_test_index -= 1
+                st.session_state.recorded_audio = None  # Clear audio when moving
                 st.rerun()
         
         with col2:
             if st.button("Skip ➡️"):
                 st.session_state.current_test_index += 1
+                st.session_state.recorded_audio = None  # Clear audio when moving
                 st.rerun()
         
         with col3:
             if st.button("✅ Complete Test", type="primary"):
-                # Simulate test completion
-                result = {
-                    "qa_name": st.session_state.qa_name,
-                    "crop_name": crop_name,
-                    "crop_code": crop_code,
-                    "language": language,
-                    "expected": test_sentence,
-                    "actual": f"Recorded audio for {crop_name}",
-                    "accuracy": 95.0,
-                    "timestamp": datetime.now().isoformat()
-                }
-                st.session_state.test_results.append(result)
-                st.session_state.current_test_index += 1
-                st.rerun()
+                # Check if audio was recorded
+                if not st.session_state.recorded_audio:
+                    st.warning("⚠️ Please record audio before completing the test!")
+                else:
+                    # TODO: Call Sarvam ASR API here with recorded audio
+                    # For now, simulate ASR result
+                    asr_result = f"Recorded audio for {crop_name}"
+                    
+                    result = {
+                        "qa_name": st.session_state.qa_name,
+                        "crop_name": crop_name,
+                        "crop_code": crop_code,
+                        "language": language,
+                        "expected": test_sentence,
+                        "actual": asr_result,
+                        "accuracy": 95.0,
+                        "timestamp": datetime.now().isoformat(),
+                        "audio_recorded": True
+                    }
+                    st.session_state.test_results.append(result)
+                    # Clear recorded audio for next test
+                    st.session_state.recorded_audio = None
+                    st.session_state.current_test_index += 1
+                    st.rerun()
     
     else:
         # Testing complete
