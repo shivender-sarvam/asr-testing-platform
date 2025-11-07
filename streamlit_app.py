@@ -701,8 +701,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - SIMPLE APPROACH: Download file, then user uploads
-                    // This is the most reliable way to get audio from JS to Streamlit
+                    // Submit button handler - EXACT FLASK WORKFLOW
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -710,36 +709,64 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Preparing...';
+                        submitBtn.textContent = '⏳ Processing...';
                         
-                        try {{
-                            // Create download link
-                            const audioUrl = URL.createObjectURL(audioBlob);
-                            const a = document.createElement('a');
-                            a.href = audioUrl;
-                            a.download = 'recording_' + key + '.webm';
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(audioUrl);
+                        // Convert to base64 and send to Streamlit via hidden input
+                        const reader = new FileReader();
+                        reader.onloadend = function() {{
+                            const base64Audio = reader.result;
                             
-                            // Show message
-                            submitBtn.textContent = '✅ Downloaded! Please upload below';
-                            submitBtn.style.background = '#28a745';
+                            // Find Streamlit input and set value
+                            const inputKey = 'audio_base64_' + key;
+                            let attempts = 0;
+                            const maxAttempts = 50;
                             
-                            // Scroll to uploader
-                            setTimeout(() => {{
-                                window.parent.postMessage({{
-                                    type: 'scroll_to_uploader'
-                                }}, '*');
-                            }}, 500);
-                        }} catch(e) {{
-                            console.error('Error:', e);
-                            alert('Error preparing audio: ' + e.message);
-                            submitBtn.disabled = false;
-                            submitBtn.textContent = '📤 Submit Recording';
-                            submitBtn.style.background = '#007bff';
-                        }}
+                            function setAudioInput() {{
+                                attempts++;
+                                const inputs = document.querySelectorAll('input[type="text"]');
+                                
+                                for (let input of inputs) {{
+                                    const inputId = (input.id || '').toLowerCase();
+                                    const inputName = (input.name || '').toLowerCase();
+                                    
+                                    if (inputId.includes(inputKey.toLowerCase()) || 
+                                        inputName.includes(inputKey.toLowerCase()) ||
+                                        (input.value === '' && attempts <= 10)) {{
+                                        
+                                        input.value = base64Audio;
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        
+                                        // Trigger Streamlit rerun by clicking a hidden button
+                                        setTimeout(() => {{
+                                            const submitBtns = document.querySelectorAll('button');
+                                            for (let btn of submitBtns) {{
+                                                if (btn.textContent.includes('Process Audio') || 
+                                                    btn.textContent.includes('Submit')) {{
+                                                    btn.click();
+                                                    break;
+                                                }}
+                                            }}
+                                        }}, 100);
+                                        
+                                        submitBtn.textContent = '✅ Submitted!';
+                                        submitBtn.style.background = '#28a745';
+                                        return;
+                                    }}
+                                }}
+                                
+                                if (attempts < maxAttempts) {{
+                                    setTimeout(setAudioInput, 100);
+                                }} else {{
+                                    alert('Could not send audio. Please refresh and try again.');
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = '📤 Submit Recording';
+                                }}
+                            }};
+                            
+                            setAudioInput();
+                        }};
+                        reader.readAsDataURL(audioBlob);
                     }});
                     
                     // Record again button
@@ -784,28 +811,21 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # SIMPLE APPROACH: File uploader for audio
-        # JavaScript downloads the file, user uploads it here
-        st.markdown("---")
-        st.markdown("**📤 Upload your recorded audio:**")
-        uploaded_audio = st.file_uploader(
-            "Choose audio file",
-            type=['webm', 'wav', 'mp3', 'ogg'],
-            key=f"audio_upload_{recording_key}",
-            label_visibility="collapsed"
+        # Hidden input for JavaScript to populate with base64 audio
+        audio_base64_key = f"audio_base64_{recording_key}"
+        audio_base64 = st.text_input(
+            "Audio Data",
+            key=audio_base64_key,
+            label_visibility="collapsed",
+            value=st.session_state.get(audio_base64_key, ""),
+            help="Hidden input for audio from JavaScript"
         )
         
-        # Process uploaded audio
-        audio_base64 = None
-        if uploaded_audio:
-            # Read audio file
-            audio_bytes = uploaded_audio.read()
-            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-            # Add data URI prefix
-            mime_type = uploaded_audio.type or 'audio/webm'
-            audio_base64 = f"data:{mime_type};base64,{audio_base64}"
+        # Store in session state
+        if audio_base64:
+            st.session_state[audio_base64_key] = audio_base64
         
-        # Auto-process when audio is uploaded - IMMEDIATE PROCESSING
+        # Auto-process when audio is received - IMMEDIATE PROCESSING (like Flask)
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
                 # Audio detected! Process it immediately (no waiting)
