@@ -865,14 +865,22 @@ def show_testing_interface():
         
         # Read audio from URL query parameters (set by JavaScript)
         # This is the most reliable way to get data from JavaScript to Streamlit
-        query_params = st.experimental_get_query_params() if hasattr(st, 'experimental_get_query_params') else st.query_params
-        audio_base64_from_url = None
-        
-        # Check for audio in URL params
-        if 'audio_data' in query_params:
-            audio_base64_from_url = query_params['audio_data'][0] if isinstance(query_params['audio_data'], list) else query_params['audio_data']
-            # Clear the URL param after reading
-            st.experimental_set_query_params() if hasattr(st, 'experimental_set_query_params') else None
+        try:
+            # Try new Streamlit API first
+            if hasattr(st, 'query_params'):
+                query_params = st.query_params
+                audio_base64_from_url = query_params.get('audio_data', None)
+                if audio_base64_from_url:
+                    # Clear the param after reading
+                    st.query_params.clear()
+            else:
+                # Fallback to experimental API
+                query_params = st.experimental_get_query_params()
+                audio_base64_from_url = query_params.get('audio_data', [None])[0] if query_params.get('audio_data') else None
+                if audio_base64_from_url:
+                    st.experimental_set_query_params()
+        except:
+            audio_base64_from_url = None
         
         # Also check session state
         audio_base64_key = f"audio_base64_{recording_key}"
