@@ -723,147 +723,66 @@ def show_testing_interface():
                         submitBtn.disabled = true;
                         submitBtn.textContent = '⏳ Processing...';
                         
-                        // Convert to base64 and send to Streamlit via hidden input
+                        // Convert to base64 and send to Streamlit
                         const reader = new FileReader();
                         reader.onloadend = function() {{
                             const base64Audio = reader.result;
                             
-                            // Store in sessionStorage first (backup)
+                            // Store in sessionStorage with unique key
+                            const storageKey = 'streamlit_audio_' + key + '_' + Date.now();
                             try {{
-                                sessionStorage.setItem('streamlit_audio_pending_' + key, base64Audio);
+                                sessionStorage.setItem(storageKey, base64Audio);
+                                console.log('✅ Audio stored in sessionStorage:', storageKey);
                             }} catch(e) {{
-                                console.log('sessionStorage not available');
+                                console.error('❌ sessionStorage failed:', e);
+                                alert('Could not store audio. Please try again.');
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = '📤 Submit Recording';
+                                return;
                             }}
                             
-                            // Find Streamlit input and set value
-                            const inputKey = 'audio_base64_' + key;
-                            let attempts = 0;
-                            const maxAttempts = 100; // Increased attempts
-                            
-                            function setAudioInput() {{
-                                attempts++;
+                            // Update URL with token to trigger Streamlit to read from sessionStorage
+                            try {{
+                                const currentUrl = window.location.href;
+                                const url = new URL(currentUrl);
+                                url.searchParams.set('audio_key', storageKey);
                                 
-                                // Try multiple ways to find the input
-                                let input = null;
-                                
-                                // Method 1: Search in parent document (if in iframe)
-                                try {{
-                                    if (window.parent && window.parent.document) {{
-                                        const parentInputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                        for (let inp of parentInputs) {{
-                                            const inpId = (inp.id || '').toLowerCase();
-                                            const inpName = (inp.name || '').toLowerCase();
-                                            const inpKey = inp.getAttribute('data-testid') || '';
-                                            
-                                            if (inpId.includes(inputKey.toLowerCase()) || 
-                                                inpName.includes(inputKey.toLowerCase()) ||
-                                                inpKey.includes(inputKey.toLowerCase()) ||
-                                                (inp.value === '' && attempts <= 20)) {{
-                                                input = inp;
-                                                break;
-                                            }}
-                                        }}
-                                    }}
-                                }} catch(e) {{
-                                    console.log('Cannot access parent document:', e);
-                                }}
-                                
-                                // Method 2: Search in current document
-                                if (!input) {{
-                                    const inputs = document.querySelectorAll('input[type="text"]');
-                                    for (let inp of inputs) {{
-                                        const inpId = (inp.id || '').toLowerCase();
-                                        const inpName = (inp.name || '').toLowerCase();
-                                        
-                                        if (inpId.includes(inputKey.toLowerCase()) || 
-                                            inpName.includes(inputKey.toLowerCase()) ||
-                                            (inp.value === '' && attempts <= 20)) {{
-                                            input = inp;
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                // Method 3: Try to find by data attributes or any empty input
-                                if (!input && attempts > 20) {{
+                                // Try to update parent window URL (if in iframe)
+                                if (window.parent && window.parent !== window) {{
                                     try {{
-                                        const allInputs = (window.parent && window.parent.document) 
-                                            ? window.parent.document.querySelectorAll('input[type="text"]')
-                                            : document.querySelectorAll('input[type="text"]');
-                                        
-                                        // Find any empty input that might be ours
-                                        for (let inp of allInputs) {{
-                                            if (inp.value === '' && inp.offsetParent !== null) {{
-                                                input = inp;
-                                                break;
-                                            }}
-                                        }}
+                                        window.parent.location.href = url.toString();
                                     }} catch(e) {{
-                                        console.log('Error in method 3:', e);
-                                    }}
-                                }}
-                                
-                                if (input) {{
-                                    console.log('✅ Found input! Setting audio data...');
-                                    input.value = base64Audio;
-                                    input.focus();
-                                    input.blur();
-                                    
-                                    // Trigger events
-                                    ['input', 'change', 'blur'].forEach(eventType => {{
-                                        const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
-                                        input.dispatchEvent(event);
-                                    }});
-                                    
-                                    // Also try to trigger via postMessage
-                                    try {{
+                                        // Cross-origin restriction - use postMessage instead
                                         window.parent.postMessage({{
-                                            type: 'streamlit:setComponentValue',
-                                            value: base64Audio,
-                                            key: inputKey
+                                            type: 'streamlit:audio_ready',
+                                            audio_key: storageKey
                                         }}, '*');
-                                    }} catch(e) {{
-                                        console.log('postMessage failed:', e);
+                                        
+                                        // Also try to update current window
+                                        window.location.href = url.toString();
                                     }}
-                                    
-                                    submitBtn.textContent = '✅ Submitted!';
-                                    submitBtn.style.background = '#28a745';
-                                    
-                                    // Trigger Streamlit rerun by reloading iframe
-                                    setTimeout(() => {{
-                                        try {{
-                                            // Try to trigger rerun via iframe reload
-                                            const iframe = window.frameElement;
-                                            if (iframe) {{
-                                                const currentSrc = iframe.src;
-                                                const separator = currentSrc.includes('?') ? '&' : '?';
-                                                iframe.src = currentSrc + separator + '_t=' + Date.now();
-                                            }}
-                                        }} catch(e) {{
-                                            console.log('Could not reload iframe');
-                                        }}
-                                    }}, 200);
-                                    
-                                    return true;
-                                }}
-                                
-                                if (attempts < maxAttempts) {{
-                                    setTimeout(setAudioInput, 50); // Faster retry
                                 }} else {{
-                                    console.error('Could not find input after ' + maxAttempts + ' attempts');
-                                    // Last resort: show message but don't fail completely
-                                    submitBtn.textContent = '⚠️ Audio ready - processing...';
-                                    submitBtn.style.background = '#ffc107';
-                                    // Try one more time after a delay
-                                    setTimeout(() => {{
-                                        setAudioInput();
-                                    }}, 1000);
+                                    window.location.href = url.toString();
                                 }}
                                 
-                                return false;
-                            }};
-                            
-                            setAudioInput();
+                                submitBtn.textContent = '✅ Submitted!';
+                                submitBtn.style.background = '#28a745';
+                            }} catch(e) {{
+                                console.error('❌ Failed to update URL:', e);
+                                // Fallback: try direct input method
+                                const inputKey = 'audio_base64_' + key;
+                                const inputs = document.querySelectorAll('input[type="text"]');
+                                for (let inp of inputs) {{
+                                    if ((inp.id || '').includes(inputKey) {{
+                                        inp.value = base64Audio;
+                                        inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        break;
+                                    }}
+                                }}
+                                submitBtn.textContent = '✅ Submitted!';
+                                submitBtn.style.background = '#28a745';
+                            }}
                         }};
                         reader.readAsDataURL(audioBlob);
                     }});
@@ -910,27 +829,23 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Hidden input for JavaScript to populate with base64 audio
+        # Check for audio_key in URL query params (from JavaScript)
+        audio_key_from_url = st.query_params.get('audio_key')
         audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64 = st.text_input(
-            "Audio Data",
-            key=audio_base64_key,
-            label_visibility="collapsed",
-            value=st.session_state.get(audio_base64_key, ""),
-            help="Hidden input for audio from JavaScript"
-        )
+        audio_base64 = None
         
-        # Fallback: Check sessionStorage if input is empty (JavaScript might have stored it there)
-        if not audio_base64:
-            # Inject JavaScript to read from sessionStorage and populate input
-            check_storage_js = f"""
+        # Method 1: Read from URL query param (token-based approach)
+        if audio_key_from_url:
+            # Inject JavaScript to read from sessionStorage using the key
+            read_audio_js = f"""
             <script>
                 (function() {{
-                    const storageKey = 'streamlit_audio_pending_{recording_key}';
+                    const storageKey = '{audio_key_from_url}';
                     const audioData = sessionStorage.getItem(storageKey);
                     
                     if (audioData) {{
-                        console.log('Found audio in sessionStorage, trying to set input...');
+                        console.log('✅ Found audio in sessionStorage:', storageKey);
+                        // Store in a hidden input that Streamlit can read
                         const inputKey = '{audio_base64_key}';
                         const inputs = document.querySelectorAll('input[type="text"]');
                         
@@ -940,7 +855,7 @@ def show_testing_interface():
                             
                             if (inputId.includes(inputKey.toLowerCase()) || 
                                 inputName.includes(inputKey.toLowerCase()) ||
-                                input.value === '') {{
+                                (input.value === '' && input.offsetParent !== null)) {{
                                 
                                 input.value = audioData;
                                 input.dispatchEvent(new Event('input', {{ bubbles: true }}));
@@ -949,23 +864,54 @@ def show_testing_interface():
                                 // Clear from storage
                                 sessionStorage.removeItem(storageKey);
                                 
-                                // Trigger rerun
+                                // Clear URL param
+                                const url = new URL(window.location);
+                                url.searchParams.delete('audio_key');
+                                window.history.replaceState({{}}, '', url);
+                                
+                                console.log('✅ Audio data set in input, triggering rerun...');
+                                
+                                // Trigger Streamlit rerun
                                 setTimeout(() => {{
                                     window.location.reload();
-                                }}, 300);
+                                }}, 100);
                                 
                                 break;
                             }}
                         }}
+                    }} else {{
+                        console.warn('⚠️ Audio not found in sessionStorage:', storageKey);
                     }}
                 }})();
             </script>
             """
-            components.html(check_storage_js, height=0)
+            components.html(read_audio_js, height=0)
+            # Give JS time to populate, then read from session state
+            if audio_key_from_url in st.session_state:
+                audio_base64 = st.session_state[audio_key_from_url]
+            else:
+                # Wait for next rerun
+                st.rerun()
+        
+        # Method 2: Read from hidden input (fallback)
+        if not audio_base64:
+            audio_base64 = st.text_input(
+                "Audio Data",
+                key=audio_base64_key,
+                label_visibility="collapsed",
+                value=st.session_state.get(audio_base64_key, ""),
+                help="Hidden input for audio from JavaScript"
+            )
         
         # Store in session state
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
+            # Also store with the URL key if present
+            if audio_key_from_url:
+                st.session_state[audio_key_from_url] = audio_base64
+            # Clear URL param after reading
+            if audio_key_from_url:
+                st.query_params.pop('audio_key', None)
         
         # Auto-process when audio is received - IMMEDIATE PROCESSING (EXACT FLASK WORKFLOW)
         # Process ASR immediately when audio is detected (no separate submit button needed)
