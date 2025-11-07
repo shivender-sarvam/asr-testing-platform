@@ -171,7 +171,7 @@ BCP47_CODES = {
     "pa": "pa-IN"
 }
 
-def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'):
+def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav', debug_expander=None):
     """
     Call Sarvam ASR API to transcribe audio
     
@@ -221,9 +221,24 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
         # Debug logging
         st.info(f"🔍 Calling ASR API:\n- URL: {SARVAM_API_URL}\n- Model: {MODEL_NAME}\n- Language: {bcp47_lang}\n- Format: {audio_format}\n- Audio size: {len(audio_bytes)} bytes\n- API Key: {'✅ Set' if api_key else '❌ Missing'}")
         
+        if debug_expander:
+            with debug_expander:
+                st.write("**Step 5.1: Request Details**")
+                st.code(f"URL: {SARVAM_API_URL}\nMethod: POST\nHeaders: api-subscription-key: {'Set' if api_key else 'Missing'}\nFiles: audio.{audio_format} ({len(audio_bytes)} bytes)\nData: model={MODEL_NAME}, language_code={bcp47_lang}", language='text')
+        
         # Make API call
         try:
+            if debug_expander:
+                with debug_expander:
+                    st.write("**Step 5.2: Sending HTTP Request**")
+                    st.info("⏳ Sending POST request to API...")
+            
             response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
+            
+            if debug_expander:
+                with debug_expander:
+                    st.write("**Step 5.3: Response Received**")
+                    st.code(f"Status Code: {response.status_code}\nHeaders: {dict(response.headers)}\nContent-Type: {response.headers.get('Content-Type', 'N/A')}\nContent-Length: {len(response.content)} bytes", language='text')
         except Exception as req_error:
             st.error(f"❌ Request failed: {req_error}")
             return None
@@ -231,7 +246,23 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
         if response.status_code == 200:
             try:
                 result = response.json()
+                
+                if debug_expander:
+                    with debug_expander:
+                        st.write("**Step 5.4: Parsing JSON Response**")
+                        st.success("✅ Response is valid JSON")
+                        st.json(result)
+                        st.write("**Step 5.5: Checking for Transcript**")
+                        st.code(f"Available fields: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}", language='text')
+                
                 transcript = result.get('transcript', result.get('text', '')).strip()
+                
+                if debug_expander:
+                    with debug_expander:
+                        if transcript:
+                            st.success(f"✅ Transcript found in standard fields: '{transcript}'")
+                        else:
+                            st.warning("⚠️ No transcript in 'transcript' or 'text' fields")
                 if transcript:
                     st.success(f"✅ ASR Success: '{transcript}'")
                     return transcript
@@ -948,16 +979,31 @@ def show_testing_interface():
         
         # Process audio when uploaded (EXACT FLASK WORKFLOW)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
+            # COMPREHENSIVE DEBUG PANEL - ALWAYS VISIBLE
+            st.markdown("---")
+            st.markdown("### 🔍 **COMPREHENSIVE DEBUG PANEL**")
+            debug_expander = st.expander("📊 **Step-by-Step Debug Info**", expanded=True)
+            
+            with debug_expander:
+                st.write("**Step 1: Audio Upload Check**")
+                st.code(f"Audio file: {uploaded_audio.name}\nSize: {len(audio_bytes)} bytes\nType: {uploaded_audio.type}", language='text')
+            
             with st.spinner("🔄 Processing audio with ASR..."):
                 try:
                     # Determine audio format
                     audio_format = 'wav'
                     conversion_status = "Not needed (already WAV)"
                     
+                    with debug_expander:
+                        st.write("**Step 2: Audio Format Detection**")
+                        st.code(f"File extension: {uploaded_audio.name.split('.')[-1]}\nInitial format: {audio_format}", language='text')
+                    
                     if uploaded_audio.name.endswith('.webm'):
                         # Try to convert to WAV if pydub is available (better compatibility)
                         # But if not available, use webm directly (API should accept it)
                         try:
+                            with debug_expander:
+                                st.write("**Step 2.1: Attempting WebM → WAV Conversion**")
                             from pydub import AudioSegment
                             import io
                             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
@@ -968,18 +1014,26 @@ def show_testing_interface():
                             audio_format = 'wav'
                             conversion_status = "✅ Successfully converted webm → wav"
                             st.success("✅ Converted webm to wav successfully!")
+                            with debug_expander:
+                                st.success(f"✅ Conversion successful!\nOriginal size: {len(audio_bytes)} bytes\nNew size: {len(audio_bytes)} bytes")
                         except (ImportError, Exception) as e:
                             # pydub not available or conversion failed - use webm directly
                             # API should accept webm format
                             audio_format = 'webm'
-                            conversion_status = "ℹ️ Using webm format directly (API accepts webm)"
+                            conversion_status = f"ℹ️ Using webm format directly (API accepts webm)\nReason: {str(e)}"
                             st.info("ℹ️ Using webm format directly - API will process it")
+                            with debug_expander:
+                                st.warning(f"⚠️ Conversion skipped\nReason: {str(e)}\nUsing original webm format")
                     
                     # Store conversion status for debugging
                     st.session_state[f'_conversion_status_{recording_key}'] = conversion_status
                     
                     # Store audio format for error logs
                     st.session_state[f'_audio_format_{recording_key}'] = audio_format
+                    
+                    with debug_expander:
+                        st.write("**Step 3: Final Audio Format**")
+                        st.code(f"Format: {audio_format}\nSize: {len(audio_bytes)} bytes\nConversion: {conversion_status}", language='text')
                     
                     # Call ASR API (like Flask)
                     # Get API key - try multiple methods (same as error logs section)
@@ -997,13 +1051,22 @@ def show_testing_interface():
                         except:
                             api_key = os.environ.get('SARVAM_API_KEY', '')
                     
+                    with debug_expander:
+                        st.write("**Step 4: API Key Retrieval**")
+                        st.code(f"API Key found: {'✅ Yes' if api_key else '❌ No'}\nKey preview: {api_key[:10] + '...' + api_key[-5:] if api_key else 'N/A'}", language='text')
+                    
                     # Always call ASR - let it handle the error if key is missing
                     # This way we get the actual API error, not just "key not configured"
+                    with debug_expander:
+                        st.write("**Step 5: Calling ASR API**")
+                        st.code(f"URL: {SARVAM_API_URL}\nModel: {MODEL_NAME}\nLanguage: {language} ({BCP47_CODES.get(language.lower(), 'hi-IN')})\nFormat: {audio_format}\nAudio size: {len(audio_bytes)} bytes", language='text')
+                    
                     asr_transcript = call_sarvam_asr(
                         audio_bytes,
                         language,
                         api_key,  # Pass the key (or None if not found)
-                        audio_format=audio_format
+                        audio_format=audio_format,
+                        debug_expander=debug_expander  # Pass debug expander for detailed logging
                     )
                     
                     if asr_transcript:
