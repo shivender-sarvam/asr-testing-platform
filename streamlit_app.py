@@ -151,7 +151,7 @@ BCP47_CODES = {
     "pa": "pa-IN"
 }
 
-def call_sarvam_asr(audio_bytes, language_code, api_key=None):
+def call_sarvam_asr(audio_bytes, language_code, api_key=None, mime_type='audio/webm'):
     """
     Call Sarvam ASR API to transcribe audio
     
@@ -159,6 +159,7 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         audio_bytes: Audio file bytes
         language_code: Language code (e.g., 'hi', 'en')
         api_key: Sarvam API key (from secrets or env)
+        mime_type: MIME type of audio (e.g., 'audio/webm', 'audio/wav')
     
     Returns:
         str: Transcribed text or None if error
@@ -178,9 +179,21 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         # Get BCP47 language code
         bcp47_lang = BCP47_CODES.get(language_code.lower(), "hi-IN")
         
+        # Determine file extension and content type
+        if 'webm' in mime_type.lower():
+            filename = 'audio.webm'
+            content_type = 'audio/webm'
+        elif 'wav' in mime_type.lower():
+            filename = 'audio.wav'
+            content_type = 'audio/wav'
+        else:
+            # Default to webm
+            filename = 'audio.webm'
+            content_type = 'audio/webm'
+        
         # Prepare request
         files = {
-            'file': ('audio.wav', audio_bytes, 'audio/wav')
+            'file': (filename, audio_bytes, content_type)
         }
         
         data = {
@@ -739,13 +752,17 @@ def show_testing_interface():
         
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             try:
-                # Extract base64 part after comma
+                # Extract base64 part and detect format
                 if ',' in audio_base64:
+                    mime_type = audio_base64.split(',')[0].split(':')[1].split(';')[0]
                     base64_data = audio_base64.split(',')[1]
                 else:
+                    mime_type = 'audio/webm'  # Default
                     base64_data = audio_base64
+                
                 audio_bytes = base64.b64decode(base64_data)
                 st.session_state.recorded_audio = audio_bytes
+                st.session_state[f'audio_mime_{recording_key}'] = mime_type
                 
                 # Automatically process ASR if not already processed
                 if not st.session_state.get(asr_processed_key, False):
@@ -753,7 +770,8 @@ def show_testing_interface():
                         asr_transcript = call_sarvam_asr(
                             audio_bytes,
                             language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                            mime_type=mime_type
                         )
                         
                         if asr_transcript:
