@@ -877,11 +877,12 @@ def show_testing_interface():
         
         # DEBUG: Show what's happening
         with st.expander("🔍 Debug Info", expanded=False):
-            st.write(f"**Audio base64 present:** {bool(audio_base64)}")
+            st.write(f"**Audio uploaded:** {uploaded_audio is not None}")
             st.write(f"**Audio processed:** {st.session_state.get(f'audio_processed_{recording_key}', False)}")
             st.write(f"**Audio submitted:** {st.session_state.get(audio_submitted_key, False)}")
             st.write(f"**Has result:** {bool(st.session_state.get(f'asr_result_{recording_key}', {}))}")
             st.write(f"**Test results count:** {len(st.session_state.test_results)}")
+            st.write(f"**Current attempt:** {current_attempt_num} / {max_attempts}")
         
         # Show results immediately after processing (EXACT FLASK WORKFLOW)
         if st.session_state.get(audio_submitted_key, False):
