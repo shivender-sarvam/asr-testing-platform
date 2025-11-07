@@ -626,14 +626,25 @@ def show_testing_interface():
             let audioChunks = [];
             let audioBlob = null;
             
-            const startBtn = document.getElementById('startBtn-' + key);
-            const stopBtn = document.getElementById('stopBtn-' + key);
-            const statusDiv = document.getElementById('status-' + key);
-            const playbackDiv = document.getElementById('playback-' + key);
-            const audioPlayer = document.getElementById('audioPlayer-' + key);
-            const downloadLink = document.getElementById('downloadLink-' + key);
+            // Wait for DOM to be ready
+            function initRecorder() {{
+                const startBtn = document.getElementById('startBtn-' + key);
+                const stopBtn = document.getElementById('stopBtn-' + key);
+                const statusDiv = document.getElementById('status-' + key);
+                const playbackDiv = document.getElementById('playback-' + key);
+                const audioPlayer = document.getElementById('audioPlayer-' + key);
+                const downloadLink = document.getElementById('downloadLink-' + key);
+                
+                if (!startBtn || !stopBtn) {{
+                    console.error('Buttons not found! startBtn:', startBtn, 'stopBtn:', stopBtn);
+                    setTimeout(initRecorder, 100);
+                    return;
+                }}
+                
+                console.log('Audio recorder initialized for key:', key);
             
             startBtn.addEventListener('click', async function() {{
+                console.log('Start button clicked');
                 try {{
                     const stream = await navigator.mediaDevices.getUserMedia({{
                         audio: {{
@@ -643,6 +654,7 @@ def show_testing_interface():
                             noiseSuppression: true
                         }}
                     }});
+                    console.log('Microphone access granted');
                     
                     let mimeType = 'audio/webm';
                     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {{
@@ -745,6 +757,7 @@ def show_testing_interface():
             }});
             
             stopBtn.addEventListener('click', function() {{
+                console.log('Stop button clicked');
                 if (mediaRecorder && mediaRecorder.state === 'recording') {{
                     mediaRecorder.stop();
                     startBtn.disabled = false;
@@ -753,9 +766,17 @@ def show_testing_interface():
                     stopBtn.disabled = true;
                     stopBtn.style.opacity = '0.5';
                     stopBtn.style.cursor = 'not-allowed';
-                    statusDiv.style.display = 'none';
+                    if (statusDiv) statusDiv.style.display = 'none';
                 }}
             }});
+            }}
+            
+            // Initialize when DOM is ready
+            if (document.readyState === 'loading') {{
+                document.addEventListener('DOMContentLoaded', initRecorder);
+            }} else {{
+                initRecorder();
+            }}
         }})();
         </script>
         """
