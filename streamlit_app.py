@@ -7,7 +7,7 @@ import io
 import re
 import requests
 import os
-from urllib.parse import urlencode
+from urllib.parse import urlencode, parse_qs
 import streamlit.components.v1 as components
 
 # Page config
@@ -769,35 +769,44 @@ def show_testing_interface():
                                             input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
                                         }});
                                         
-                                        console.log('✅ Value set! Triggering Streamlit rerun via iframe refresh...');
+                                        console.log('✅ Value set! Sending to Streamlit via URL...');
                                         
                                         // Show success message
                                         submitBtn.textContent = '✅ Submitted! Processing...';
                                         submitBtn.style.background = '#28a745';
                                         submitBtn.disabled = true;
                                         
-                                        // Trigger Streamlit rerun by refreshing the iframe (not full page)
-                                        // This preserves session state
-                                        setTimeout(() => {{
+                                        // Send audio to Streamlit via URL query parameter
+                                        // This is the most reliable method
+                                        try {{
+                                            // Encode base64 for URL (replace special chars)
+                                            const encodedAudio = encodeURIComponent(base64Audio);
+                                            
+                                            // Get current URL
+                                            const currentUrl = window.parent.location.href;
+                                            const url = new URL(currentUrl);
+                                            
+                                            // Add audio data to URL
+                                            url.searchParams.set('audio_data', encodedAudio);
+                                            
+                                            // Navigate to new URL (triggers Streamlit rerun)
+                                            console.log('🔄 Navigating to URL with audio data...');
+                                            window.parent.location.href = url.toString();
+                                        }} catch(e) {{
+                                            console.error('Error setting URL:', e);
+                                            // Fallback: try iframe refresh
                                             try {{
-                                                // Find the iframe and refresh just it
                                                 const iframe = window.frameElement;
-                                                if (iframe && iframe.parentElement) {{
-                                                    // Refresh iframe src to trigger Streamlit rerun
+                                                if (iframe) {{
                                                     const currentSrc = iframe.src;
                                                     const separator = currentSrc.includes('?') ? '&' : '?';
-                                                    iframe.src = currentSrc + separator + '_t=' + Date.now();
-                                                    console.log('🔄 Refreshing iframe to trigger Streamlit rerun...');
-                                                }} else {{
-                                                    // Fallback: use postMessage
-                                                    window.parent.postMessage({{
-                                                        type: 'streamlit:rerun'
-                                                    }}, '*');
+                                                    iframe.src = currentSrc + separator + 'audio_data=' + encodeURIComponent(base64Audio);
                                                 }}
-                                            }} catch(e) {{
-                                                console.log('Error triggering rerun:', e);
+                                            }} catch(e2) {{
+                                                console.error('Fallback also failed:', e2);
+                                                alert('Audio submitted! Please refresh the page manually.');
                                             }}
-                                        }}, 300);
+                                        }}
                                         
                                         return;
                                     }}
@@ -854,41 +863,24 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Hidden text input for JavaScript to populate with base64 audio
-        # Make it easier for JavaScript to find by using a unique key
+        # Read audio from URL query parameters (set by JavaScript)
+        # This is the most reliable way to get data from JavaScript to Streamlit
+        query_params = st.experimental_get_query_params() if hasattr(st, 'experimental_get_query_params') else st.query_params
+        audio_base64_from_url = None
+        
+        # Check for audio in URL params
+        if 'audio_data' in query_params:
+            audio_base64_from_url = query_params['audio_data'][0] if isinstance(query_params['audio_data'], list) else query_params['audio_data']
+            # Clear the URL param after reading
+            st.experimental_set_query_params() if hasattr(st, 'experimental_set_query_params') else None
+        
+        # Also check session state
         audio_base64_key = f"audio_base64_{recording_key}"
+        audio_base64 = audio_base64_from_url or st.session_state.get(audio_base64_key, "")
         
-        # Check if we should read from localStorage (set by JavaScript)
-        # This allows JavaScript to set value without page reload
-        if 'localStorage_audio_read' not in st.session_state:
-            st.session_state['localStorage_audio_read'] = {}
-        
-        # Try to read from URL params or use session state
-        audio_base64 = st.text_input(
-            "Audio Data",
-            key=audio_base64_key,
-            label_visibility="collapsed",
-            value=st.session_state.get(audio_base64_key, ""),
-            help="Hidden input for audio data"
-        )
-        
-        # Store in session state so it persists
+        # Store in session state
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
-        
-        # Auto-refresh to detect audio immediately (polling mechanism)
-        # Only poll if we're waiting for audio AND audio_base64 might have been set
-        # Check if audio was submitted but not yet processed
-        if not st.session_state.get(f'audio_stored_{recording_key}', False):
-            # Check if audio_base64 was just set (JavaScript might have updated it)
-            # If it's still empty, don't poll (avoid infinite loop)
-            if not audio_base64 or len(audio_base64) < 10:
-                # No audio yet, but check if we should poll
-                # Only poll if we recently clicked submit (check localStorage via JavaScript)
-                pass  # Don't poll if no audio_base64 at all
-            else:
-                # audio_base64 exists but not processed - process it immediately (handled below)
-                pass
         
         # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
