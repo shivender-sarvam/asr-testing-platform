@@ -167,16 +167,7 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
     try:
         # Get API key from secrets or environment
         if not api_key:
-            try:
-                # Try direct access first
-                api_key = st.secrets.get('SARVAM_API_KEY', '')
-            except:
-                try:
-                    # Try nested access
-                    api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
-                except:
-                    # Fallback to environment variable
-                    api_key = os.environ.get('SARVAM_API_KEY', '')
+            api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
         
         if not api_key:
             st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
@@ -544,10 +535,10 @@ def show_testing_interface():
         recording_key = f"recording_{st.session_state.current_test_index}"
         
         # Custom Audio Recorder HTML Component
-        # Use string replacement to avoid format string issues
-        audio_recorder_html_template = """
-        <div id="audio-recorder-PLACEHOLDER_KEY" style="text-align: center; padding: 20px;">
-            <button id="startBtn-PLACEHOLDER_KEY" style="
+        # Use .format() instead of f-string to avoid issues with curly braces
+        audio_recorder_html = """
+        <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
+            <button id="startBtn-{recording_key}" style="
                 background: #1e3c72;
                 color: white;
                 border: none;
@@ -558,7 +549,7 @@ def show_testing_interface():
                 margin: 5px;
             ">🎤 Start Recording</button>
             
-            <button id="stopBtn-PLACEHOLDER_KEY" disabled style="
+            <button id="stopBtn-{recording_key}" disabled style="
                 background: #dc3545;
                 color: white;
                 border: none;
@@ -570,14 +561,14 @@ def show_testing_interface():
                 opacity: 0.5;
             ">⏹️ Stop Recording</button>
             
-            <div id="status-PLACEHOLDER_KEY" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
+            <div id="status-{recording_key}" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
                 🔴 Recording... Speak clearly!
             </div>
             
-            <div id="playback-PLACEHOLDER_KEY" style="margin: 20px 0; display: none;">
+            <div id="playback-{recording_key}" style="margin: 20px 0; display: none;">
                 <p style="color: #28a745; font-weight: bold;">✅ Recording completed! Listen to your recording:</p>
-                <audio id="audioPlayer-PLACEHOLDER_KEY" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
-                <a id="downloadLink-PLACEHOLDER_KEY" download="recording.wav" style="
+                <audio id="audioPlayer-{recording_key}" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
+                <a id="downloadLink-{recording_key}" download="recording.wav" style="
                     display: inline-block;
                     background: #28a745;
                     color: white;
@@ -591,7 +582,7 @@ def show_testing_interface():
         
         <script>
         (function() {{
-            const key = 'PLACEHOLDER_KEY';
+            const key = '{recording_key}';
             let mediaRecorder;
             let audioChunks = [];
             let audioBlob = null;
@@ -660,49 +651,18 @@ def show_testing_interface():
                             }}
                             
                             // Also try direct DOM manipulation as fallback
-                            // Find the specific Streamlit input by key
-                            function updateStreamlitInput() {{
-                                const inputKey = 'audio_base64_' + key;
-                                let input = null;
-                                
-                                // Try to find by data-testid or aria-label
-                                const allInputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                for (let inp of allInputs) {{
-                                    const testId = inp.getAttribute('data-testid') || '';
-                                    const ariaLabel = inp.getAttribute('aria-label') || '';
-                                    if (testId.includes(inputKey) || ariaLabel.includes('Audio Data')) {{
-                                        input = inp;
+                            setTimeout(function() {{
+                                const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                for (let input of inputs) {{
+                                    if (input.value === '' || input.getAttribute('data-base-input') === 'true') {{
+                                        input.value = base64Audio;
+                                        input.setAttribute('data-base-input', 'true');
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                         break;
                                     }}
                                 }}
-                                
-                                // If not found, try finding by key attribute or empty input
-                                if (!input) {{
-                                    for (let inp of allInputs) {{
-                                        const inpKey = inp.getAttribute('data-base-input-key');
-                                        if (inpKey === inputKey || (inp.value === '' && !inpKey)) {{
-                                            input = inp;
-                                            inp.setAttribute('data-base-input-key', inputKey);
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                if (input) {{
-                                    input.value = base64Audio;
-                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    console.log('Audio data sent to Streamlit input:', inputKey);
-                                }} else {{
-                                    console.error('Could not find Streamlit input for key:', inputKey);
-                                }}
-                            }};
-                            
-                            // Try multiple times with delays
-                            updateStreamlitInput();
-                            setTimeout(updateStreamlitInput, 200);
-                            setTimeout(updateStreamlitInput, 500);
-                            setTimeout(updateStreamlitInput, 1000);
+                            }}, 100);
                         }};
                         reader.readAsDataURL(audioBlob);
                         
@@ -737,9 +697,7 @@ def show_testing_interface():
             }});
         }})();
         </script>
-        """
-        # Replace placeholder with actual recording key
-        audio_recorder_html = audio_recorder_html_template.replace('PLACEHOLDER_KEY', recording_key)
+        """.format(recording_key=recording_key)
         
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
@@ -752,12 +710,6 @@ def show_testing_interface():
             label_visibility="collapsed",
             value=""
         )
-        
-        # Debug: Show if audio was received
-        if audio_base64:
-            st.caption(f"🔍 Audio received: {len(audio_base64)} chars")
-        else:
-            st.caption("🔍 Waiting for audio... (Click Start Recording, then Stop)")
         
         # Convert base64 to bytes if audio was recorded and process ASR automatically
         asr_result_key = f"asr_result_{recording_key}"
@@ -776,19 +728,10 @@ def show_testing_interface():
                 # Automatically process ASR if not already processed
                 if not st.session_state.get(asr_processed_key, False):
                     with st.spinner("🔄 Processing audio with ASR..."):
-                        # Get API key with fallback handling
-                        try:
-                            api_key = st.secrets.get('SARVAM_API_KEY', '')
-                        except:
-                            try:
-                                api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
-                            except:
-                                api_key = os.environ.get('SARVAM_API_KEY', None)
-                        
                         asr_transcript = call_sarvam_asr(
                             audio_bytes,
                             language,
-                            api_key
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
                         )
                         
                         if asr_transcript:
