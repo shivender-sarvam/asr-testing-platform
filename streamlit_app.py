@@ -99,6 +99,10 @@ if 'recorded_audio' not in st.session_state:
     st.session_state.recorded_audio = None
 if 'is_recording' not in st.session_state:
     st.session_state.is_recording = False
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+if 'current_attempt' not in st.session_state:
+    st.session_state.current_attempt = {}  # Track attempts per crop: {crop_index: attempt_number}
 
 # Google OAuth Configuration - will be read in functions
 def get_google_config():
@@ -557,10 +561,18 @@ def show_testing_interface():
         
         # Crop name display
         st.info(f"🌾 **Crop Name:** {crop_name}")
-        st.markdown(f"*Speak a sentence that includes the crop name: {crop_name}*")
+        st.markdown(f"*You need to record 5 audio samples using this crop name in sentences.*")
+        
+        # Initialize attempt tracking for this crop
+        crop_index = st.session_state.current_test_index
+        current_attempt_num = st.session_state.current_attempt.get(crop_index, 1)
+        max_attempts = 5
+        
+        # Show attempt counter (like Flask)
+        st.markdown(f"**Recording Attempt: {current_attempt_num} / {max_attempts}**")
         
         # Initialize session state for this recording
-        recording_key = f"recording_{st.session_state.current_test_index}"
+        recording_key = f"recording_{crop_index}_attempt_{current_attempt_num}"
         audio_submitted_key = f"audio_submitted_{recording_key}"
         
         # Audio Recording Component
@@ -682,19 +694,38 @@ def show_testing_interface():
                                 }}, '*');
                             }}
                             
-                            // Also try direct DOM manipulation as fallback
-                            setTimeout(function() {{
+                            // Also try direct DOM manipulation as fallback - more aggressive
+                            function updateStreamlitInput() {{
+                                const inputKey = 'audio_base64_' + key;
                                 const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                let found = false;
+                                
                                 for (let input of inputs) {{
-                                    if (input.value === '' || input.getAttribute('data-base-input') === 'true') {{
+                                    // Check by key attribute or data attribute
+                                    const inputId = input.id || input.getAttribute('data-testid') || '';
+                                    if (inputId.includes(inputKey) || input.value === '' || input.getAttribute('data-audio-input') === 'true') {{
                                         input.value = base64Audio;
-                                        input.setAttribute('data-base-input', 'true');
+                                        input.setAttribute('data-audio-input', 'true');
                                         input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                         input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        // Also try keydown/keyup to trigger Streamlit
+                                        input.dispatchEvent(new KeyboardEvent('keydown', {{ bubbles: true, key: 'Enter' }}));
+                                        found = true;
+                                        console.log('Updated input field:', inputId);
                                         break;
                                     }}
                                 }}
-                            }}, 100);
+                                
+                                if (!found) {{
+                                    console.log('Input field not found, retrying...');
+                                    setTimeout(updateStreamlitInput, 200);
+                                }}
+                            }}
+                            
+                            // Try multiple times with increasing delays
+                            setTimeout(updateStreamlitInput, 100);
+                            setTimeout(updateStreamlitInput, 500);
+                            setTimeout(updateStreamlitInput, 1000);
                         }};
                         reader.readAsDataURL(audioBlob);
                         
@@ -860,18 +891,21 @@ def show_testing_interface():
                 keyword_badge = "✅ **Yes**" if result.get('matches') else "❌ **No**"
                 st.markdown(f"**Keyword Detected:** {keyword_badge}")
                 
-                # Save result (only once)
+                # Save result (per attempt, like Flask)
                 result_saved_key = f'result_saved_{recording_key}'
                 if not st.session_state.get(result_saved_key, False):
                     test_result = {
                         "qa_name": st.session_state.qa_name,
                         "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                        "session_id": st.session_state.session_id,
                         "crop_name": crop_name,
                         "crop_code": crop_code,
                         "language": language,
+                        "attempt_number": current_attempt_num,
                         "expected": crop_name,
-                        "actual": result['transcript'],
-                        "match": "Yes" if result.get('matches') else "No",
+                        "transcript": result['transcript'],
+                        "keyword_detected": "Yes" if result.get('matches') else "No",
+                        "match": "Yes" if result.get('matches') else "No",  # Keep for compatibility
                         "timestamp": datetime.now().isoformat(),
                         "audio_recorded": True
                     }
@@ -880,39 +914,56 @@ def show_testing_interface():
             else:
                 st.error("❌ ASR processing failed. Please check your API key.")
             
-            # Always show Next button if result was submitted (make it more visible)
+            # Show navigation based on attempt number (like Flask)
             st.markdown("---")
-            st.markdown("### Continue Testing")
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                if st.button("➡️ Next Crop", type="primary", key=f"next_{recording_key}", use_container_width=True):
-                    # Move to next crop
-                    st.session_state.current_test_index += 1
-                    # Clear this recording's state
-                    result_saved_key = f'result_saved_{recording_key}'
-                    for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
-                               f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
-                               audio_submitted_key, result_saved_key]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
-            with col2:
-                if st.button("🔄 Record Again", key=f"rerecord_after_submit_{recording_key}", use_container_width=True):
-                    # Clear submission state to allow re-recording
-                    result_saved_key = f'result_saved_{recording_key}'
-                    st.session_state[audio_submitted_key] = False
-                    st.session_state[result_saved_key] = False
-                    # Remove the saved result
-                    if st.session_state.test_results and len(st.session_state.test_results) > 0:
-                        # Remove last result if it matches this crop
-                        last_result = st.session_state.test_results[-1]
-                        if last_result.get('crop_name') == crop_name:
-                            st.session_state.test_results.pop()
-                    st.rerun()
-            with col3:
-                if st.button("🔄 Try Again", key=f"retry_{recording_key}", use_container_width=True):
-                    st.session_state[audio_submitted_key] = False
-                    st.rerun()
+            
+            # If more attempts remaining, show "Record Again" to continue with same crop
+            if current_attempt_num < max_attempts:
+                st.markdown(f"### Continue Testing ({current_attempt_num}/{max_attempts} attempts completed)")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Record Again", type="primary", key=f"next_attempt_{recording_key}", use_container_width=True):
+                        # Move to next attempt for same crop
+                        st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                        # Clear this attempt's state
+                        result_saved_key = f'result_saved_{recording_key}'
+                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
+                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
+                                   audio_submitted_key, result_saved_key]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
+                with col2:
+                    if st.button("➡️ Next Crop", key=f"skip_to_next_crop_{recording_key}", use_container_width=True):
+                        # Skip remaining attempts and move to next crop
+                        st.session_state.current_test_index += 1
+                        # Clear all state for this crop
+                        for key in list(st.session_state.keys()):
+                            if f'recording_{crop_index}' in key:
+                                del st.session_state[key]
+                        if crop_index in st.session_state.current_attempt:
+                            del st.session_state.current_attempt[crop_index]
+                        st.rerun()
+            else:
+                # All 5 attempts done, move to next crop
+                st.markdown("### ✅ All 5 attempts completed!")
+                st.info(f"You've completed all {max_attempts} attempts for {crop_name}. Moving to next crop...")
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    if st.button("➡️ Next Crop", type="primary", key=f"next_crop_{recording_key}", use_container_width=True):
+                        # Move to next crop
+                        st.session_state.current_test_index += 1
+                        # Clear all state for this crop
+                        for key in list(st.session_state.keys()):
+                            if f'recording_{crop_index}' in key:
+                                del st.session_state[key]
+                        if crop_index in st.session_state.current_attempt:
+                            del st.session_state.current_attempt[crop_index]
+                        st.rerun()
+                with col2:
+                    if st.button("🔄 Review Results", key=f"review_{recording_key}", use_container_width=True):
+                        # Show results for this crop
+                        st.rerun()
         
         # End Session button (matches Flask version)
         st.markdown("---")
@@ -931,19 +982,34 @@ def show_testing_interface():
             matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('accuracy', 0) > 0))
             st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
         
-        # Results table
+        # Results table - format like Flask
         if st.session_state.test_results:
-            results_df = pd.DataFrame(st.session_state.test_results)
+            # Create DataFrame with Flask-compatible columns
+            results_list = []
+            for r in st.session_state.test_results:
+                results_list.append({
+                    'QA Name': r.get('qa_name', ''),
+                    'Language': r.get('language', ''),
+                    'Session ID': r.get('session_id', st.session_state.session_id),
+                    'Crop Name': r.get('crop_name', ''),
+                    'Attempt Number': r.get('attempt_number', 1),
+                    'Transcription': r.get('transcript', r.get('actual', '')),
+                    'Keyword Detected': r.get('keyword_detected', r.get('match', 'No')),
+                    'Timestamp': r.get('timestamp', '')
+                })
+            
+            results_df = pd.DataFrame(results_list)
             st.markdown("### 📊 Test Results")
             st.dataframe(results_df, use_container_width=True)
             
-            # Download CSV - always show this button
+            # Download CSV - Flask format
             st.markdown("---")
             csv = results_df.to_csv(index=False)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             email = st.session_state.user_info.get('email', 'unknown').replace('@', '_at_') if st.session_state.user_info else 'unknown'
             language = st.session_state.selected_language or 'unknown'
-            filename = f"asr_test_results_{email}_{language}_{timestamp}.csv"
+            session_id = st.session_state.session_id
+            filename = f"asr_test_results_{email}_{language}_{session_id}_{timestamp}.csv"
             
             st.download_button(
                 label="📥 Download Results CSV",
