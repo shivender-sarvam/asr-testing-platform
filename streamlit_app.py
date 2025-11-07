@@ -919,7 +919,8 @@ def show_testing_interface():
             else:
                 st.error("❌ ASR processing failed. Please check your API key.")
             
-                # AUTO-ADVANCE like Flask (after showing results)
+            # AUTO-ADVANCE like Flask (after showing results)
+            if result.get('transcript'):  # Only auto-advance if we got a result
                 import time
                 if current_attempt_num < max_attempts:
                     # More attempts remaining - auto-advance to next attempt after 8 seconds
@@ -952,10 +953,6 @@ def show_testing_interface():
                     else:
                         # All crops done - go to results
                         st.session_state.show_results = True
-                        st.rerun()
-                with col2:
-                    if st.button("🔄 Review Results", key=f"review_{recording_key}", use_container_width=True):
-                        # Show results for this crop
                         st.rerun()
         
         # End Session button (matches Flask version)
