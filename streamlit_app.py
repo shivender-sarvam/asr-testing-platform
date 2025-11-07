@@ -848,9 +848,9 @@ def show_testing_interface():
                             if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
-                
-                # Show results immediately after submit (matches Flask)
-                if st.session_state.get(audio_submitted_key, False):
+        
+        # Show results immediately after submit (matches Flask) - OUTSIDE the audio_stored block
+        if st.session_state.get(audio_submitted_key, False):
                     result = st.session_state.get(f'asr_result_{recording_key}', {})
                     st.markdown("---")
                     st.markdown("### ✅ Recording Submitted!")
