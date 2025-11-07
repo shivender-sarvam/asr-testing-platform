@@ -251,37 +251,28 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
 def check_match(expected_text, actual_text):
     """
     Check if ASR transcription matches the expected crop name
-    
-    Args:
-        expected_text: Expected crop name (e.g., "Wheat")
-        actual_text: ASR transcription result
-    
-    Returns:
-        bool: True if match, False if no match
+    EXACT FLASK VERSION
     """
     if not actual_text:
         return False
     
-    # Normalize both texts (lowercase, remove extra spaces and punctuation)
-    expected_clean = re.sub(r'[^\w\s]', '', expected_text.lower().strip())
-    actual_clean = re.sub(r'[^\w\s]', '', actual_text.lower().strip())
+    transcript_lower = actual_text.lower().strip()
+    crop_lower = expected_text.lower().strip()
     
-    # Exact match
-    if expected_clean == actual_clean:
+    # Direct match
+    if crop_lower in transcript_lower:
         return True
     
-    # Check if expected word is in the transcription
-    if expected_clean in actual_clean:
-        return True
+    # Check for partial matches (useful for compound words)
+    crop_words = crop_lower.split()
+    transcript_words = transcript_lower.split()
     
-    # Check if transcription contains key parts of expected word
-    expected_words = expected_clean.split()
-    for word in expected_words:
-        if word in actual_clean:
-            return True
+    # If crop name has multiple words, check if all words are present
+    if len(crop_words) > 1:
+        return all(word in transcript_lower for word in crop_words)
     
-    # No match
-    return False
+    # For single words, check if it's a substring
+    return crop_lower in transcript_lower
 
 def check_authentication():
     """Check if user is authenticated"""
@@ -732,7 +723,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - USE POSTMESSAGE (PROPER IFRAME COMMUNICATION)
+                    // Submit button handler - DOWNLOAD FILE (MOST RELIABLE)
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -740,69 +731,20 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Processing...';
+                        submitBtn.textContent = '⏳ Downloading...';
                         
-                        // Convert to base64 and send via postMessage
-                        const reader = new FileReader();
-                        reader.onloadend = function() {{
-                            const base64Audio = reader.result;
-                            console.log('✅ Audio converted to base64, length:', base64Audio.length);
-                            
-                            // Send to parent via postMessage (proper iframe communication)
-                            try {{
-                                const message = {{
-                                    type: 'streamlit_audio_data',
-                                    key: 'audio_base64_' + key,
-                                    data: base64Audio
-                                }};
-                                
-                                // Send to parent window
-                                if (window.parent && window.parent !== window) {{
-                                    window.parent.postMessage(message, '*');
-                                    console.log('✅ Audio sent via postMessage to parent');
-                                }} else {{
-                                    // Not in iframe, try direct method
-                                    console.log('Not in iframe, trying direct method');
-                                    const inputKey = 'audio_base64_' + key;
-                                    const inputs = document.querySelectorAll('input[type="text"]');
-                                    for (let inp of inputs) {{
-                                        if ((inp.id || '').includes(inputKey) || (inp.name || '').includes(inputKey)) {{
-                                            inp.value = base64Audio;
-                                            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                            inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                submitBtn.textContent = '✅ Submitted!';
-                                submitBtn.style.background = '#28a745';
-                                
-                                // Trigger rerun after a short delay
-                                setTimeout(() => {{
-                                    try {{
-                                        // Reload iframe to trigger Streamlit rerun
-                                        const iframe = window.frameElement;
-                                        if (iframe) {{
-                                            const currentSrc = iframe.src || window.location.href;
-                                            const separator = currentSrc.includes('?') ? '&' : '?';
-                                            iframe.src = currentSrc + separator + '_audio_submitted=' + Date.now();
-                                        }} else {{
-                                            window.location.reload();
-                                        }}
-                                    }} catch(e) {{
-                                        console.log('Reload failed, but message sent:', e);
-                                    }}
-                                }}, 500);
-                                
-                            }} catch(e) {{
-                                console.error('❌ Failed to send audio:', e);
-                                alert('Could not send audio. Please refresh and try again.');
-                                submitBtn.disabled = false;
-                                submitBtn.textContent = '📤 Submit Recording';
-                            }}
-                        }};
-                        reader.readAsDataURL(audioBlob);
+                        // Download audio file - user will upload it
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        const a = document.createElement('a');
+                        a.href = audioUrl;
+                        a.download = 'recording_' + key + '.webm';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(audioUrl);
+                        
+                        submitBtn.textContent = '✅ Downloaded! Upload below';
+                        submitBtn.style.background = '#28a745';
                     }});
                     
                     // Record again button - always increment attempt if results are shown
@@ -867,146 +809,71 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Add JavaScript listener for postMessage from iframe
-        postmessage_listener_js = f"""
-        <script>
-        (function() {{
-            const inputKey = 'audio_base64_{recording_key}';
-            
-            // Listen for messages from iframe
-            window.addEventListener('message', function(event) {{
-                // Accept messages from any origin (since iframe might have different origin)
-                if (event.data && event.data.type === 'streamlit_audio_data' && event.data.key === inputKey) {{
-                    console.log('✅ Received audio data via postMessage');
-                    
-                    // Find the Streamlit input
-                    const inputs = document.querySelectorAll('input[type="text"]');
-                    for (let input of inputs) {{
-                        const inpId = (input.id || '').toLowerCase();
-                        const inpName = (input.name || '').toLowerCase();
-                        const inpKey = input.getAttribute('data-testid') || '';
-                        
-                        if (inpId.includes(inputKey.toLowerCase()) || 
-                            inpName.includes(inputKey.toLowerCase()) ||
-                            inpKey.includes(inputKey.toLowerCase())) {{
-                            
-                            // Set the value
-                            input.value = event.data.data;
-                            
-                            // Trigger events to notify Streamlit
-                            ['input', 'change', 'blur'].forEach(eventType => {{
-                                const evt = new Event(eventType, {{ bubbles: true, cancelable: true }});
-                                input.dispatchEvent(evt);
-                            }});
-                            
-                            console.log('✅ Audio data set in input');
-                            
-                            // Trigger Streamlit rerun
-                            setTimeout(() => {{
-                                window.location.reload();
-                            }}, 100);
-                            
-                            break;
-                        }}
-                    }}
-                }}
-            }});
-        }})();
-        </script>
-        """
-        components.html(postmessage_listener_js, height=0)
-        
-        # Check URL param for audio submission trigger
-        audio_submitted = st.query_params.get('_audio_submitted')
-        
-        # Hidden input for JavaScript to populate with base64 audio
-        audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64 = st.text_input(
-            "Audio Data",
-            key=audio_base64_key,
-            label_visibility="collapsed",
-            value=st.session_state.get(audio_base64_key, ""),
-            help="Hidden input for audio from JavaScript"
+        # File uploader for audio (SIMPLE & RELIABLE)
+        st.markdown("---")
+        st.markdown("**📤 Upload your recorded audio:**")
+        uploaded_audio = st.file_uploader(
+            "Choose audio file",
+            type=['webm', 'wav', 'mp3'],
+            key=f"audio_upload_{recording_key}",
+            help="After recording, click Submit to download, then upload the file here"
         )
         
-        # Store in session state when received
-        if audio_base64:
-            st.session_state[audio_base64_key] = audio_base64
-            # Clear URL param
-            if audio_submitted:
-                st.query_params.pop('_audio_submitted', None)
+        # Process uploaded audio
+        audio_bytes = None
+        if uploaded_audio is not None:
+            audio_bytes = uploaded_audio.read()
+            st.success("✅ Audio file received!")
         
-        # Auto-process when audio is received - IMMEDIATE PROCESSING (EXACT FLASK WORKFLOW)
-        # Process ASR immediately when audio is detected (no separate submit button needed)
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            if not st.session_state.get(f'audio_processed_{recording_key}', False):
-                # Audio detected! Process it immediately (EXACT FLASK WORKFLOW)
-                with st.spinner("🔄 Processing audio with ASR..."):
-                    try:
-                        # Extract base64 part after comma
-                        if ',' in audio_base64:
-                            base64_data = audio_base64.split(',')[1]
-                            mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
-                        else:
-                            base64_data = audio_base64
-                            mime_type = 'audio/webm'
-                        
-                        audio_bytes = base64.b64decode(base64_data)
-                        st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes  # Store for processing
-                        
-                        # Convert webm to wav if needed
-                        audio_format = 'wav'
-                        if 'webm' in mime_type.lower():
-                            try:
-                                from pydub import AudioSegment
-                                import io
-                                audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
-                                audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-                                wav_buffer = io.BytesIO()
-                                audio_segment.export(wav_buffer, format="wav")
-                                audio_bytes = wav_buffer.getvalue()
-                                audio_format = 'wav'
-                            except Exception as e:
-                                st.warning(f"Could not convert webm to wav: {e}. Using original format.")
-                                audio_format = 'webm'
-                        
-                        # Call ASR API immediately (like Flask)
-                        asr_transcript = call_sarvam_asr(
-                            audio_bytes,
-                            language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                            audio_format=audio_format
-                        )
-                        
-                        if asr_transcript:
-                            matches = check_match(crop_name, asr_transcript)
-                            st.session_state[f'asr_result_{recording_key}'] = {
-                                'transcript': asr_transcript,
-                                'matches': matches
-                            }
-                        else:
-                            st.session_state[f'asr_result_{recording_key}'] = {
-                                'transcript': None,
-                                'matches': False
-                            }
-                        
-                        # Mark as processed
-                        st.session_state[f'audio_processed_{recording_key}'] = True
-                        st.session_state[audio_submitted_key] = True
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error processing audio: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
-        
-        # Manual trigger button if audio is present but not processed
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            if not st.session_state.get(f'audio_processed_{recording_key}', False):
-                st.warning("⚠️ Audio detected but not yet processed. Click to process:")
-                if st.button("🔄 Process Audio Now", key=f"manual_process_{recording_key}", type="primary"):
-                    # Force processing
-                    del st.session_state[f'audio_processed_{recording_key}']
+        # Process audio when uploaded (EXACT FLASK WORKFLOW)
+        if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
+            with st.spinner("🔄 Processing audio with ASR..."):
+                try:
+                    # Determine audio format
+                    audio_format = 'wav'
+                    if uploaded_audio.name.endswith('.webm'):
+                        try:
+                            from pydub import AudioSegment
+                            import io
+                            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+                            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                            wav_buffer = io.BytesIO()
+                            audio_segment.export(wav_buffer, format="wav")
+                            audio_bytes = wav_buffer.getvalue()
+                            audio_format = 'wav'
+                        except Exception as e:
+                            st.warning(f"Could not convert webm to wav: {e}. Using original format.")
+                            audio_format = 'webm'
+                    
+                    # Call ASR API (like Flask)
+                    asr_transcript = call_sarvam_asr(
+                        audio_bytes,
+                        language,
+                        st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                        audio_format=audio_format
+                    )
+                    
+                    if asr_transcript:
+                        # Use Flask's exact keyword matching logic
+                        matches = check_match(crop_name, asr_transcript)
+                        st.session_state[f'asr_result_{recording_key}'] = {
+                            'transcript': asr_transcript,
+                            'matches': matches
+                        }
+                    else:
+                        st.session_state[f'asr_result_{recording_key}'] = {
+                            'transcript': None,
+                            'matches': False
+                        }
+                    
+                    # Mark as processed
+                    st.session_state[f'audio_processed_{recording_key}'] = True
+                    st.session_state[audio_submitted_key] = True
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Error processing audio: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
         
         # DEBUG: Show what's happening
         with st.expander("🔍 Debug Info", expanded=False):
