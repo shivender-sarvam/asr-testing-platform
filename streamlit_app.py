@@ -588,6 +588,22 @@ def show_testing_interface():
         
         # Initialize attempt tracking for this crop
         crop_index = st.session_state.current_test_index
+        
+        # Check if user wants to increment attempt (from "Record Again" button)
+        if st.query_params.get('increment_attempt') == 'true':
+            current_attempt_num = st.session_state.current_attempt.get(crop_index, 1)
+            if current_attempt_num < 5:
+                st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                # Clear previous attempt's state
+                old_recording_key = f"recording_{crop_index}_attempt_{current_attempt_num}"
+                old_audio_submitted_key = f"audio_submitted_{old_recording_key}"
+                for key in [f'audio_base64_{old_recording_key}', f'audio_processed_{old_recording_key}', 
+                           f'asr_result_{old_recording_key}', old_audio_submitted_key]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+            st.query_params.pop('increment_attempt', None)
+            st.rerun()
+        
         current_attempt_num = st.session_state.current_attempt.get(crop_index, 1)
         max_attempts = 5
         
@@ -787,13 +803,34 @@ def show_testing_interface():
                         reader.readAsDataURL(audioBlob);
                     }});
                     
-                    // Record again button
+                    // Record again button - increment attempt and trigger rerun
                     recordAgainBtn.addEventListener('click', function() {{
-                        playbackDiv.style.display = 'none';
-                        audioBlob = null;
-                        audioChunks = [];
-                        startBtn.disabled = false;
-                        stopBtn.disabled = true;
+                        // If result was already submitted, increment attempt via URL
+                        const submitted = submitBtn.textContent.includes('Submitted') || submitBtn.style.background.includes('28a745');
+                        if (submitted) {{
+                            // Increment attempt by updating URL
+                            const currentUrl = window.location.href;
+                            const url = new URL(currentUrl);
+                            url.searchParams.set('increment_attempt', 'true');
+                            
+                            // Update URL to trigger Streamlit rerun with incremented attempt
+                            if (window.parent && window.parent !== window) {{
+                                try {{
+                                    window.parent.location.href = url.toString();
+                                }} catch(e) {{
+                                    window.location.href = url.toString();
+                                }}
+                            }} else {{
+                                window.location.href = url.toString();
+                            }}
+                        }} else {{
+                            // Just reset UI if not submitted yet
+                            playbackDiv.style.display = 'none';
+                            audioBlob = null;
+                            audioChunks = [];
+                            startBtn.disabled = false;
+                            stopBtn.disabled = true;
+                        }}
                     }});
                     
                     mediaRecorder.start(100);
