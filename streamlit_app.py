@@ -735,31 +735,21 @@ def show_testing_interface():
                             submitBtn.disabled = true;
                             
                             try {{
-                                // Check if audio is too large for URL (URLs have ~2000 char limit)
-                                // If too large, use localStorage + token approach
-                                if (base64Audio.length > 1500) {{
-                                    // Too large for URL - use localStorage with token
-                                    const token = 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                                    localStorage.setItem('streamlit_audio_token_' + token, base64Audio);
-                                    console.log('Audio too large for URL, using token:', token);
-                                    
-                                    // Send token in URL instead
-                                    const currentUrl = window.parent.location.href;
-                                    const url = new URL(currentUrl);
-                                    url.searchParams.set('audio_token', token);
-                                    window.parent.location.href = url.toString();
-                                }} else {{
-                                    // Small enough - send directly in URL
-                                    const encodedAudio = encodeURIComponent(base64Audio);
-                                    const currentUrl = window.parent.location.href;
-                                    const url = new URL(currentUrl);
-                                    url.searchParams.set('audio_data', encodedAudio);
-                                    console.log('🔄 Navigating to URL with audio data (length: ' + base64Audio.length + ')...');
-                                    window.parent.location.href = url.toString();
-                                }}
+                                // Store in sessionStorage with a unique key
+                                const storageKey = 'streamlit_audio_' + key + '_' + Date.now();
+                                sessionStorage.setItem(storageKey, base64Audio);
+                                console.log('✅ Audio stored in sessionStorage:', storageKey);
+                                
+                                // Send storage key in URL (much shorter than full base64)
+                                const currentUrl = window.parent.location.href;
+                                const url = new URL(currentUrl);
+                                url.searchParams.set('audio_key', storageKey);
+                                
+                                console.log('🔄 Navigating to URL with audio key...');
+                                window.parent.location.href = url.toString();
                             }} catch(e) {{
-                                console.error('Error setting URL:', e);
-                                alert('Error sending audio: ' + e.message + '. Please try again.');
+                                console.error('Error:', e);
+                                alert('Error sending audio: ' + e.message);
                                 submitBtn.disabled = false;
                                 submitBtn.textContent = '📤 Submit Recording';
                                 submitBtn.style.background = '#007bff';
@@ -810,71 +800,89 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Read audio from URL query parameters (set by JavaScript)
-        # This is the most reliable way to get data from JavaScript to Streamlit
-        audio_base64_from_url = None
-        audio_token_from_url = None
+        # Read audio key from URL query parameters
+        # JavaScript stores audio in sessionStorage and sends the key in URL
+        audio_key_from_url = None
         
         try:
             # Try new Streamlit API first
             if hasattr(st, 'query_params'):
                 query_params = st.query_params
-                audio_base64_from_url = query_params.get('audio_data', None)
-                audio_token_from_url = query_params.get('audio_token', None)
-                if audio_base64_from_url or audio_token_from_url:
-                    # Clear the params after reading
+                audio_key_from_url = query_params.get('audio_key', None)
+                if audio_key_from_url:
+                    # Clear the param after reading
                     new_params = dict(query_params)
-                    new_params.pop('audio_data', None)
-                    new_params.pop('audio_token', None)
+                    new_params.pop('audio_key', None)
                     st.query_params = new_params
             else:
                 # Fallback to experimental API
                 query_params = st.experimental_get_query_params()
-                audio_base64_from_url = query_params.get('audio_data', [None])[0] if query_params.get('audio_data') else None
-                audio_token_from_url = query_params.get('audio_token', [None])[0] if query_params.get('audio_token') else None
-                if audio_base64_from_url or audio_token_from_url:
+                audio_key_from_url = query_params.get('audio_key', [None])[0] if query_params.get('audio_key') else None
+                if audio_key_from_url:
                     st.experimental_set_query_params()
         except Exception as e:
             st.warning(f"Error reading query params: {e}")
-            audio_base64_from_url = None
-            audio_token_from_url = None
+            audio_key_from_url = None
         
-        # If we got a token, try to read from localStorage via JavaScript injection
-        if audio_token_from_url:
-            # Inject JavaScript to read from localStorage
-            token_js = f"""
+        # If we got a storage key, inject JavaScript to read from sessionStorage
+        audio_base64 = None
+        if audio_key_from_url:
+            # Inject JavaScript to read from sessionStorage and put in a hidden input
+            read_audio_js = f"""
             <script>
-                const token = '{audio_token_from_url}';
-                const audioData = localStorage.getItem('streamlit_audio_token_' + token);
-                if (audioData) {{
-                    // Store in a hidden input that Streamlit can read
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.id = 'audio_from_token';
-                    input.value = audioData;
-                    document.body.appendChild(input);
-                    // Also try to set it in URL
-                    const url = new URL(window.location);
-                    url.searchParams.set('audio_data', encodeURIComponent(audioData));
-                    window.history.replaceState({{}}, '', url);
-                }}
+                (function() {{
+                    const storageKey = '{audio_key_from_url}';
+                    const audioData = sessionStorage.getItem(storageKey);
+                    
+                    if (audioData) {{
+                        console.log('✅ Found audio in sessionStorage, length:', audioData.length);
+                        
+                        // Create hidden input with audio data
+                        let input = document.getElementById('audio_input_streamlit');
+                        if (!input) {{
+                            input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.id = 'audio_input_streamlit';
+                            input.name = 'audio_data';
+                            document.body.appendChild(input);
+                        }}
+                        input.value = audioData;
+                        
+                        // Also store in window for Streamlit to access
+                        window.streamlitAudioData = audioData;
+                        
+                        // Trigger a custom event
+                        window.dispatchEvent(new CustomEvent('streamlitAudioReady', {{ detail: audioData }}));
+                        
+                        // Clean up
+                        sessionStorage.removeItem(storageKey);
+                    }} else {{
+                        console.error('❌ Audio not found in sessionStorage for key:', storageKey);
+                    }}
+                }})();
             </script>
             """
-            st.components.v1.html(token_js, height=0)
-            # Rerun to read the new URL param
-            st.rerun()
-        
-        # Also check session state
-        audio_base64_key = f"audio_base64_{recording_key}"
-        
-        # Decode URL-encoded audio if from URL
-        if audio_base64_from_url:
-            try:
-                from urllib.parse import unquote
-                audio_base64 = unquote(audio_base64_from_url)
-            except:
-                audio_base64 = audio_base64_from_url
+            components.html(read_audio_js, height=0)
+            
+            # Try to read from a hidden input that JavaScript will create
+            # We'll use a text input that JavaScript populates
+            audio_base64_key = f"audio_base64_{recording_key}"
+            audio_base64 = st.text_input(
+                "Audio from storage",
+                key=audio_base64_key,
+                label_visibility="collapsed",
+                value="",
+                help="Hidden input for audio from sessionStorage"
+            )
+            
+            # If still empty, rerun to give JavaScript time to set it
+            if not audio_base64:
+                import time
+                time.sleep(0.5)
+                st.rerun()
         else:
+            # Check session state
+            audio_base64_key = f"audio_base64_{recording_key}"
             audio_base64 = st.session_state.get(audio_base64_key, "")
         
         # Store in session state
