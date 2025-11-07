@@ -167,7 +167,16 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
     try:
         # Get API key from secrets or environment
         if not api_key:
-            api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
+            try:
+                # Try direct access first
+                api_key = st.secrets.get('SARVAM_API_KEY', '')
+            except:
+                try:
+                    # Try nested access
+                    api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                except:
+                    # Fallback to environment variable
+                    api_key = os.environ.get('SARVAM_API_KEY', '')
         
         if not api_key:
             st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
@@ -728,10 +737,19 @@ def show_testing_interface():
                 # Automatically process ASR if not already processed
                 if not st.session_state.get(asr_processed_key, False):
                     with st.spinner("🔄 Processing audio with ASR..."):
+                        # Get API key with fallback handling
+                        try:
+                            api_key = st.secrets.get('SARVAM_API_KEY', '')
+                        except:
+                            try:
+                                api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                            except:
+                                api_key = os.environ.get('SARVAM_API_KEY', None)
+                        
                         asr_transcript = call_sarvam_asr(
                             audio_bytes,
                             language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                            api_key
                         )
                         
                         if asr_transcript:
