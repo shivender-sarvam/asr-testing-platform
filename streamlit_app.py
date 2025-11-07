@@ -774,6 +774,12 @@ def show_testing_interface():
             value=""
         )
         
+        # DEBUG: Show if audio_base64 is being received
+        if audio_base64:
+            st.info(f"🔍 DEBUG: Audio base64 received! Length: {len(audio_base64)} chars")
+        else:
+            st.info("🔍 DEBUG: No audio base64 data yet. Record audio to see it here.")
+        
         # Store audio in session state when recorded (but don't process yet)
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
@@ -834,7 +840,13 @@ def show_testing_interface():
                     st.error(f"Error storing audio: {e}")
         
         # Show playback if audio is stored (but not yet submitted)
-        if st.session_state.get(f'audio_stored_{recording_key}', False) and not st.session_state.get(audio_submitted_key, False):
+        audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
+        audio_submitted = st.session_state.get(audio_submitted_key, False)
+        
+        # DEBUG: Show state
+        st.info(f"🔍 DEBUG: audio_stored={audio_stored}, audio_submitted={audio_submitted}")
+        
+        if audio_stored and not audio_submitted:
             audio_bytes = st.session_state.get(f'audio_bytes_{recording_key}')
             if audio_bytes:
                 st.success("✅ Recording completed! Listen to your recording:")
