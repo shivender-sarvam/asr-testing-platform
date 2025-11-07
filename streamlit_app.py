@@ -874,10 +874,7 @@ def show_testing_interface():
                         }
                         st.session_state.test_results.append(test_result)
                         
-                        # Auto-continue to next crop after showing result
-                        st.success("✅ Result saved! Moving to next crop...")
-                        import time
-                        time.sleep(2)
+                        # Save result and move to next
                         st.session_state.current_test_index += 1
                         # Clear this recording's state
                         for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
