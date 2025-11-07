@@ -227,6 +227,8 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 st.code(f"URL: {SARVAM_API_URL}\nMethod: POST\nHeaders: api-subscription-key: {'Set' if api_key else 'Missing'}\nFiles: audio.{audio_format} ({len(audio_bytes)} bytes)\nData: model={MODEL_NAME}, language_code={bcp47_lang}", language='text')
         
         # Make API call
+        response = None
+        request_error = None
         try:
             if debug_expander:
                 with debug_expander:
@@ -239,13 +241,80 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 with debug_expander:
                     st.write("**Step 5.3: Response Received**")
                     st.code(f"Status Code: {response.status_code}\nHeaders: {dict(response.headers)}\nContent-Type: {response.headers.get('Content-Type', 'N/A')}\nContent-Length: {len(response.content)} bytes", language='text')
-        except Exception as req_error:
-            st.error(f"❌ Request failed: {req_error}")
+        except requests.exceptions.Timeout as timeout_err:
+            request_error = f"Timeout: {timeout_err}"
+            st.error(f"❌ Request timed out after 30 seconds: {timeout_err}")
+            if debug_expander:
+                with debug_expander:
+                    st.write("**Step 5.3: Request Failed (Timeout)**")
+                    st.error(f"⏱️ Request timed out after 30 seconds\nError: {timeout_err}")
+            # Store error in session state
+            if hasattr(st, 'session_state'):
+                st.session_state['_last_api_response'] = {
+                    'status_code': 'TIMEOUT',
+                    'error': 'Request timed out after 30 seconds',
+                    'error_details': str(timeout_err),
+                    'response': None
+                }
             return None
+        except requests.exceptions.ConnectionError as conn_err:
+            request_error = f"Connection Error: {conn_err}"
+            st.error(f"❌ Could not connect to API: {conn_err}")
+            if debug_expander:
+                with debug_expander:
+                    st.write("**Step 5.3: Request Failed (Connection Error)**")
+                    st.error(f"🔌 Connection failed\nError: {conn_err}\n\nPossible causes:\n- API server is down\n- Network issue\n- Firewall blocking connection")
+            # Store error in session state
+            if hasattr(st, 'session_state'):
+                st.session_state['_last_api_response'] = {
+                    'status_code': 'CONNECTION_ERROR',
+                    'error': 'Could not connect to API server',
+                    'error_details': str(conn_err),
+                    'response': None
+                }
+            return None
+        except Exception as req_error:
+            request_error = f"Request Error: {req_error}"
+            st.error(f"❌ Request failed: {req_error}")
+            if debug_expander:
+                with debug_expander:
+                    st.write("**Step 5.3: Request Failed**")
+                    st.error(f"❌ Request failed\nError: {req_error}\nError Type: {type(req_error).__name__}")
+            # Store error in session state
+            if hasattr(st, 'session_state'):
+                st.session_state['_last_api_response'] = {
+                    'status_code': 'ERROR',
+                    'error': f'Request failed: {str(req_error)}',
+                    'error_details': str(req_error),
+                    'error_type': type(req_error).__name__,
+                    'response': None
+                }
+            return None
+        
+        # If we got here, we have a response - store it immediately
+        if response is not None and hasattr(st, 'session_state'):
+            # Store response immediately (even before parsing)
+            try:
+                response_text = response.text[:5000]  # Store first 5000 chars
+                st.session_state['_last_api_response'] = {
+                    'status_code': response.status_code,
+                    'headers': dict(response.headers),
+                    'content_type': response.headers.get('Content-Type', 'N/A'),
+                    'content_length': len(response.content),
+                    'raw_response_preview': response_text,
+                    'response': None  # Will be filled after JSON parsing
+                }
+            except:
+                pass  # If storing fails, continue anyway
         
         if response.status_code == 200:
             try:
                 result = response.json()
+                
+                # Update session state with parsed response
+                if hasattr(st, 'session_state') and st.session_state.get('_last_api_response'):
+                    st.session_state['_last_api_response']['response'] = result
+                    st.session_state['_last_api_response']['available_fields'] = list(result.keys()) if isinstance(result, dict) else 'Not a dict'
                 
                 if debug_expander:
                     with debug_expander:
@@ -360,8 +429,13 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     st.session_state['_last_api_response'] = {
                         'status_code': 200,
                         'raw_response': response.text[:2000],
-                        'error': f'JSON parse error: {json_error}'
+                        'error': f'JSON parse error: {json_error}',
+                        'response': None
                     }
+                if debug_expander:
+                    with debug_expander:
+                        st.write("**Step 5.4: JSON Parse Error**")
+                        st.error(f"❌ Failed to parse JSON\nError: {json_error}\nRaw response (first 1000 chars):\n{response.text[:1000]}")
                 return None
         else:
             st.error(f"❌ API error: HTTP {response.status_code}")
@@ -374,8 +448,13 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     st.session_state['_last_api_response'] = {
                         'status_code': response.status_code,
                         'response': error_body,
-                        'error': f'HTTP {response.status_code}'
+                        'error': f'HTTP {response.status_code}',
+                        'available_fields': list(error_body.keys()) if isinstance(error_body, dict) else 'Not a dict'
                     }
+                if debug_expander:
+                    with debug_expander:
+                        st.write("**Step 5.3: Non-200 Response**")
+                        st.error(f"❌ API returned HTTP {response.status_code}\nResponse: {error_body}")
             except:
                 error_text = response.text[:1000]
                 st.error(f"Error text: {error_text}")
@@ -385,8 +464,13 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     st.session_state['_last_api_response'] = {
                         'status_code': response.status_code,
                         'raw_response': error_text,
-                        'error': f'HTTP {response.status_code}'
+                        'error': f'HTTP {response.status_code}',
+                        'response': None
                     }
+                if debug_expander:
+                    with debug_expander:
+                        st.write("**Step 5.3: Non-200 Response (Non-JSON)**")
+                        st.error(f"❌ API returned HTTP {response.status_code}\nRaw response: {error_text}")
             return None
             
     except requests.exceptions.Timeout:
