@@ -232,6 +232,12 @@ def handle_oauth_callback():
                 if email_domain in ALLOWED_DOMAINS:
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
+                    # Auto-set QA name from Google OAuth (use name or extract from email)
+                    if user_info.get('name'):
+                        st.session_state.qa_name = user_info['name']
+                    else:
+                        # Extract name from email (e.g., "shivender" from "shivender@sarvam.ai")
+                        st.session_state.qa_name = user_info['email'].split('@')[0].title()
                     # Clear the OAuth code from URL
                     st.query_params.clear()
                     st.rerun()
@@ -268,9 +274,15 @@ def main_app():
             st.rerun()
     
     # Main content
-    if not st.session_state.qa_name:
-        show_name_input()
-    elif not st.session_state.selected_language:
+    # Auto-set QA name from user_info if not set
+    if st.session_state.user_info and not st.session_state.qa_name:
+        if st.session_state.user_info.get('name'):
+            st.session_state.qa_name = st.session_state.user_info['name']
+        else:
+            # Extract name from email (e.g., "shivender" from "shivender@sarvam.ai")
+            st.session_state.qa_name = st.session_state.user_info['email'].split('@')[0].title()
+    
+    if not st.session_state.selected_language:
         show_language_selection()
     elif not st.session_state.test_data:
         show_csv_upload()
