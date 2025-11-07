@@ -799,9 +799,9 @@ def show_testing_interface():
         with col3:
             if st.button("✅ Save & Next"):
                 # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key, {})
-                asr_transcript = asr_result_data.get('transcript', None)
-                matches = asr_result_data.get('matches', False)
+                asr_result_data = st.session_state.get(asr_result_key) or {}
+                asr_transcript = asr_result_data.get('transcript', None) if asr_result_data else None
+                matches = asr_result_data.get('matches', False) if asr_result_data else False
                 
                 if asr_transcript:
                     asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
@@ -837,9 +837,9 @@ def show_testing_interface():
         with col4:
             if st.button("🏁 Finish Testing", type="primary"):
                 # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key, {})
-                asr_transcript = asr_result_data.get('transcript', None)
-                matches = asr_result_data.get('matches', False)
+                asr_result_data = st.session_state.get(asr_result_key) or {}
+                asr_transcript = asr_result_data.get('transcript', None) if asr_result_data else None
+                matches = asr_result_data.get('matches', False) if asr_result_data else False
                 
                 if asr_transcript:
                     asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
