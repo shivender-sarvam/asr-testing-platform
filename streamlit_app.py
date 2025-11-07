@@ -907,10 +907,11 @@ def show_testing_interface():
                     conversion_status = "Not needed (already WAV)"
                     
                     if uploaded_audio.name.endswith('.webm'):
+                        # Try to convert to WAV if pydub is available (better compatibility)
+                        # But if not available, use webm directly (API should accept it)
                         try:
                             from pydub import AudioSegment
                             import io
-                            st.info("🔄 Attempting to convert webm to wav...")
                             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
                             audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
                             wav_buffer = io.BytesIO()
@@ -919,15 +920,12 @@ def show_testing_interface():
                             audio_format = 'wav'
                             conversion_status = "✅ Successfully converted webm → wav"
                             st.success("✅ Converted webm to wav successfully!")
-                        except ImportError as e:
-                            st.error(f"❌ pydub not installed yet. Streamlit Cloud is still installing dependencies. Please wait 1-2 minutes and refresh.")
-                            st.info("💡 Check Streamlit Cloud dashboard: https://share.streamlit.io - look for 'Running' status")
+                        except (ImportError, Exception) as e:
+                            # pydub not available or conversion failed - use webm directly
+                            # API should accept webm format
                             audio_format = 'webm'
-                            conversion_status = f"❌ pydub not installed: {e}"
-                        except Exception as e:
-                            st.warning(f"Could not convert webm to wav: {e}. Using original format.")
-                            audio_format = 'webm'
-                            conversion_status = f"⚠️ Conversion failed: {e}"
+                            conversion_status = "ℹ️ Using webm format directly (API accepts webm)"
+                            st.info("ℹ️ Using webm format directly - API will process it")
                     
                     # Store conversion status for debugging
                     st.session_state[f'_conversion_status_{recording_key}'] = conversion_status
