@@ -164,9 +164,6 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
     Returns:
         str: Transcribed text or None if error
     """
-    # DEBUG: Show that function was called
-    st.info("🔍 DEBUG: ASR function called")
-    
     try:
         # Get API key from secrets or environment
         if not api_key:
@@ -178,21 +175,12 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 except:
                     api_key = os.environ.get('SARVAM_API_KEY', '')
         
-        # DEBUG: Check API key status (without exposing actual key)
-        if api_key:
-            st.info(f"✅ DEBUG: API key found (length: {len(api_key)} chars)")
-        else:
-            st.error("❌ DEBUG: API key NOT found! Check Streamlit secrets.")
-            st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
+        if not api_key:
+            st.warning("⚠️ Sarvam API key not configured.")
             return None
         
         # Get BCP47 language code
         bcp47_lang = BCP47_CODES.get(language_code.lower(), "hi-IN")
-        st.info(f"🔍 DEBUG: Language code: {language_code} → BCP47: {bcp47_lang}")
-        
-        # DEBUG: Show audio data info
-        audio_size = len(audio_bytes)
-        st.info(f"🔍 DEBUG: Audio size: {audio_size} bytes ({audio_size/1024:.2f} KB)")
         
         # Prepare request - use correct format
         mime_type_for_api = 'audio/wav' if audio_format == 'wav' else 'audio/webm'
@@ -211,50 +199,34 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
             'api-subscription-key': api_key
         }
         
-        # DEBUG: Show request details
-        st.info(f"🔍 DEBUG: API URL: {SARVAM_API_URL}")
-        st.info(f"🔍 DEBUG: Model: {MODEL_NAME}")
-        st.info(f"🔍 DEBUG: Request headers: api-subscription-key present: {bool(headers.get('api-subscription-key'))}")
-        
         # Make API call
-        st.info("🚀 DEBUG: Making API request...")
         response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
-        
-        # DEBUG: Show response details
-        st.info(f"🔍 DEBUG: Response status code: {response.status_code}")
-        st.info(f"🔍 DEBUG: Response headers: {dict(response.headers)}")
         
         if response.status_code == 200:
             try:
                 result = response.json()
-                st.info(f"🔍 DEBUG: Response JSON: {result}")
                 transcript = result.get('transcript', result.get('text', '')).strip()
-                st.success(f"✅ DEBUG: Transcript received: '{transcript}'")
                 return transcript
             except Exception as json_error:
-                st.error(f"❌ DEBUG: Failed to parse JSON response: {json_error}")
-                st.info(f"🔍 DEBUG: Raw response text: {response.text[:500]}")
+                st.error(f"Failed to parse API response: {json_error}")
                 return None
         else:
-            st.error(f"❌ DEBUG: API returned error status: {response.status_code}")
+            st.error(f"API error: {response.status_code}")
             try:
                 error_body = response.json()
-                st.error(f"❌ DEBUG: Error response: {error_body}")
+                st.error(f"Error: {error_body}")
             except:
-                st.error(f"❌ DEBUG: Error response text: {response.text[:500]}")
+                st.error(f"Error: {response.text[:200]}")
             return None
             
     except requests.exceptions.Timeout:
-        st.error("❌ DEBUG: API request TIMEOUT (30s exceeded)")
+        st.error("API request timed out")
         return None
-    except requests.exceptions.ConnectionError as conn_error:
-        st.error(f"❌ DEBUG: Connection error: {str(conn_error)}")
-        st.error("❌ DEBUG: Could not connect to API. Check if URL is correct.")
+    except requests.exceptions.ConnectionError:
+        st.error("Could not connect to API")
         return None
     except Exception as e:
-        st.error(f"❌ DEBUG: Exception occurred: {type(e).__name__}: {str(e)}")
-        import traceback
-        st.error(f"❌ DEBUG: Full traceback:\n{traceback.format_exc()}")
+        st.error(f"ASR API error: {str(e)}")
         return None
 
 def check_match(expected_text, actual_text):
@@ -559,7 +531,7 @@ def show_csv_upload():
         st.rerun()
 
 def show_testing_interface():
-    """Main testing interface"""
+    """Main testing interface - matches Flask/Render version exactly"""
     if st.session_state.current_test_index < len(st.session_state.test_data):
         current_crop = st.session_state.test_data[st.session_state.current_test_index]
         
@@ -568,23 +540,31 @@ def show_testing_interface():
         crop_code = current_crop.get('crop_code') or current_crop.get('code', 'N/A')
         language = current_crop.get('language', st.session_state.selected_language or 'en')
         
-        st.header(f"🎤 Testing: {crop_name}")
-        st.markdown(f"**Crop Code:** {crop_code} | **Language:** {language.title() if isinstance(language, str) else language}")
+        st.header(f"🎤 ASR Testing Session")
         
-        # Progress
+        # Progress info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**QA Name:** {st.session_state.qa_name}")
+            st.markdown(f"**Language:** {language.title() if isinstance(language, str) else language}")
+        with col2:
+            st.markdown(f"**Progress:** {st.session_state.current_test_index + 1} / {len(st.session_state.test_data)}")
+            st.markdown(f"**Current Crop:** {crop_name}")
+        
+        # Progress bar
         progress = (st.session_state.current_test_index + 1) / len(st.session_state.test_data)
         st.progress(progress)
-        st.markdown(f"**Progress:** {st.session_state.current_test_index + 1} of {len(st.session_state.test_data)}")
         
-        # Test sentence
-        test_sentence = f"Please say {crop_name}"
-        st.markdown(f"**Say this sentence:** \"{test_sentence}\"")
+        # Crop name display
+        st.info(f"🌾 **Crop Name:** {crop_name}")
+        st.markdown(f"*Speak a sentence that includes the crop name: {crop_name}*")
+        
+        # Initialize session state for this recording
+        recording_key = f"recording_{st.session_state.current_test_index}"
+        audio_submitted_key = f"audio_submitted_{recording_key}"
         
         # Audio Recording Component
         st.markdown("### 🎤 Record Audio")
-        
-        # Create unique key for this crop's recording
-        recording_key = f"recording_{st.session_state.current_test_index}"
         
         # Custom Audio Recorder HTML Component
         # Use .format() instead of f-string to avoid issues with curly braces
@@ -763,253 +743,157 @@ def show_testing_interface():
             value=""
         )
         
-        # Convert base64 to bytes if audio was recorded and process ASR automatically
-        asr_result_key = f"asr_result_{recording_key}"
-        asr_processed_key = f"asr_processed_{recording_key}"
-        
-        # DEBUG: Check if audio_base64 is received
-        if audio_base64:
-            st.info(f"🔍 DEBUG: Audio base64 received! Length: {len(audio_base64)} chars")
-            st.info(f"🔍 DEBUG: Audio base64 starts with: {audio_base64[:50]}...")
-        else:
-            st.info("🔍 DEBUG: No audio base64 data yet. Record audio to see it here.")
-        
+        # Store audio in session state when recorded (but don't process yet)
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            try:
-                st.info("🔍 DEBUG: Processing audio base64...")
-                # Extract base64 part after comma
-                if ',' in audio_base64:
-                    base64_data = audio_base64.split(',')[1]
-                    # Detect MIME type from data URL
-                    mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
-                    st.info(f"🔍 DEBUG: Detected MIME type: {mime_type}")
-                else:
-                    base64_data = audio_base64
-                    mime_type = 'audio/webm'
-                
-                audio_bytes = base64.b64decode(base64_data)
-                st.info(f"🔍 DEBUG: Decoded audio bytes: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
-                
-                # Convert webm to wav if needed (API expects wav format)
-                # Store original format for API call
-                audio_format = 'wav'  # Default
-                if 'webm' in mime_type.lower():
-                    st.info("🔍 DEBUG: Audio is webm format, attempting conversion to wav...")
-                    try:
-                        # Try using pydub if available (requires ffmpeg)
-                        from pydub import AudioSegment
-                        import io
-                        
-                        # Load webm audio
-                        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
-                        # Convert to wav: 16kHz, mono
-                        audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-                        
-                        # Export to wav bytes
-                        wav_buffer = io.BytesIO()
-                        audio_segment.export(wav_buffer, format="wav")
-                        audio_bytes = wav_buffer.getvalue()
-                        audio_format = 'wav'
-                        st.info(f"✅ DEBUG: Converted to WAV using pydub: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
-                    except ImportError:
-                        st.warning("⚠️ DEBUG: pydub not available, trying ffmpeg directly...")
+            if not st.session_state.get(f'audio_stored_{recording_key}', False):
+                try:
+                    # Extract base64 part after comma
+                    if ',' in audio_base64:
+                        base64_data = audio_base64.split(',')[1]
+                        mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
+                    else:
+                        base64_data = audio_base64
+                        mime_type = 'audio/webm'
+                    
+                    audio_bytes = base64.b64decode(base64_data)
+                    
+                    # Convert webm to wav if needed
+                    audio_format = 'wav'
+                    if 'webm' in mime_type.lower():
                         try:
-                            import tempfile
-                            import subprocess
-                            
-                            # Write webm to temp file
-                            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_webm:
-                                temp_webm.write(audio_bytes)
-                                temp_webm_path = temp_webm.name
-                            
-                            # Convert to wav using ffmpeg
-                            temp_wav_path = temp_webm_path.replace('.webm', '.wav')
-                            convert_cmd = [
-                                'ffmpeg', '-i', temp_webm_path,
-                                '-ar', '16000',  # Sample rate 16kHz
-                                '-ac', '1',     # Mono channel
-                                '-f', 'wav',    # WAV format
-                                '-y',           # Overwrite output
-                                temp_wav_path
-                            ]
-                            
-                            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=10)
-                            
-                            if result.returncode == 0:
-                                # Read converted wav file
-                                with open(temp_wav_path, 'rb') as f:
-                                    audio_bytes = f.read()
-                                audio_format = 'wav'
-                                st.info(f"✅ DEBUG: Converted to WAV using ffmpeg: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
-                                
-                                # Clean up temp files
+                            from pydub import AudioSegment
+                            import io
+                            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+                            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                            wav_buffer = io.BytesIO()
+                            audio_segment.export(wav_buffer, format="wav")
+                            audio_bytes = wav_buffer.getvalue()
+                            audio_format = 'wav'
+                        except:
+                            try:
+                                import tempfile
+                                import subprocess
                                 import os
+                                with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_webm:
+                                    temp_webm.write(audio_bytes)
+                                    temp_webm_path = temp_webm.name
+                                temp_wav_path = temp_webm_path.replace('.webm', '.wav')
+                                result = subprocess.run([
+                                    'ffmpeg', '-i', temp_webm_path, '-ar', '16000', '-ac', '1', '-f', 'wav', '-y', temp_wav_path
+                                ], capture_output=True, text=True, timeout=10)
+                                if result.returncode == 0:
+                                    with open(temp_wav_path, 'rb') as f:
+                                        audio_bytes = f.read()
+                                    audio_format = 'wav'
                                 try:
                                     os.unlink(temp_webm_path)
-                                    os.unlink(temp_wav_path)
+                                    if os.path.exists(temp_wav_path):
+                                        os.unlink(temp_wav_path)
                                 except:
                                     pass
-                            else:
-                                st.warning(f"⚠️ DEBUG: FFmpeg conversion failed. Error: {result.stderr[:200]}")
-                                st.warning("⚠️ DEBUG: Will try sending as webm format to API")
-                        except Exception as conv_error:
-                            st.warning(f"⚠️ DEBUG: Audio conversion error: {conv_error}. Will try sending as webm.")
-                    except Exception as conv_error:
-                        st.warning(f"⚠️ DEBUG: pydub conversion failed: {conv_error}. Will try sending as webm.")
-                
-                # Format is stored in audio_format variable, will be passed to API call
-                
-                st.session_state.recorded_audio = audio_bytes
-                st.success("✅ DEBUG: Audio successfully decoded and stored!")
-                
-                # Automatically process ASR if not already processed
-                if not st.session_state.get(asr_processed_key, False):
-                    with st.spinner("🔄 Processing audio with ASR..."):
-                        asr_transcript = call_sarvam_asr(
-                            audio_bytes,
-                            language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                            audio_format=audio_format
-                        )
-                        
-                        if asr_transcript:
-                            matches = check_match(crop_name, asr_transcript)
-                            st.session_state[asr_result_key] = {
-                                'transcript': asr_transcript,
-                                'matches': matches
-                            }
-                        else:
-                            st.session_state[asr_result_key] = {
-                                'transcript': None,
-                                'matches': False
-                            }
-                        
-                        st.session_state[asr_processed_key] = True
-                        st.rerun()
-            except Exception as e:
-                st.error(f"Error processing audio: {e}")
-        
-        # Display status and ASR results
-        if st.session_state.recorded_audio:
-            st.success("✅ Audio recorded!")
-            st.markdown("### 🔊 Listen to Your Recording")
-            st.audio(st.session_state.recorded_audio, format="audio/webm")
-            
-            # Show ASR results if available
-            if st.session_state.get(asr_result_key):
-                result = st.session_state[asr_result_key]
-                st.markdown("---")
-                st.markdown("### 🎯 ASR Results")
-                
-                if result['transcript']:
-                    st.markdown(f"**Transcribed:** {result['transcript']}")
-                    st.markdown(f"**Expected:** {crop_name}")
+                            except:
+                                pass
                     
-                    if result['matches']:
-                        st.success("✅ **MATCH!**")
+                    # Store audio for later processing
+                    st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
+                    st.session_state[f'audio_format_{recording_key}'] = audio_format
+                    st.session_state[f'audio_stored_{recording_key}'] = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error storing audio: {e}")
+        
+        # Show playback if audio is stored
+        if st.session_state.get(f'audio_stored_{recording_key}', False):
+            audio_bytes = st.session_state.get(f'audio_bytes_{recording_key}')
+            if audio_bytes:
+                st.success("✅ Recording completed! Listen to your recording:")
+                st.audio(audio_bytes, format="audio/webm")
+                
+                # Submit button - matches Flask version
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("📤 Submit Recording", type="primary", key=f"submit_{recording_key}"):
+                        # Process ASR when submit is clicked
+                        with st.spinner("🔄 Processing audio with ASR..."):
+                            audio_format = st.session_state.get(f'audio_format_{recording_key}', 'wav')
+                            asr_transcript = call_sarvam_asr(
+                                audio_bytes,
+                                language,
+                                st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                                audio_format=audio_format
+                            )
+                            
+                            if asr_transcript:
+                                matches = check_match(crop_name, asr_transcript)
+                                st.session_state[f'asr_result_{recording_key}'] = {
+                                    'transcript': asr_transcript,
+                                    'matches': matches
+                                }
+                            else:
+                                st.session_state[f'asr_result_{recording_key}'] = {
+                                    'transcript': None,
+                                    'matches': False
+                                }
+                            
+                            st.session_state[audio_submitted_key] = True
+                            st.rerun()
+                
+                with col2:
+                    if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
+                        # Clear all state for this recording
+                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
+                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
+                                   audio_submitted_key]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
+                
+                # Show results immediately after submit (matches Flask)
+                if st.session_state.get(audio_submitted_key, False):
+                    result = st.session_state.get(f'asr_result_{recording_key}', {})
+                    st.markdown("---")
+                    st.markdown("### ✅ Recording Submitted!")
+                    
+                    if result.get('transcript'):
+                        st.markdown(f"**Transcription:** {result['transcript']}")
+                        keyword_badge = "✅ **Yes**" if result.get('matches') else "❌ **No**"
+                        st.markdown(f"**Keyword Detected:** {keyword_badge}")
+                        
+                        # Save result
+                        test_result = {
+                            "qa_name": st.session_state.qa_name,
+                            "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                            "crop_name": crop_name,
+                            "crop_code": crop_code,
+                            "language": language,
+                            "expected": crop_name,
+                            "actual": result['transcript'],
+                            "match": "Yes" if result.get('matches') else "No",
+                            "timestamp": datetime.now().isoformat(),
+                            "audio_recorded": True
+                        }
+                        st.session_state.test_results.append(test_result)
+                        
+                        # Auto-continue to next crop after showing result
+                        st.success("✅ Result saved! Moving to next crop...")
+                        import time
+                        time.sleep(2)
+                        st.session_state.current_test_index += 1
+                        # Clear this recording's state
+                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
+                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
+                                   audio_submitted_key]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
                     else:
-                        st.error("❌ **NO MATCH**")
-                else:
-                    st.error("❌ ASR processing failed. Please check your API key.")
-            
-            if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
-                st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
-                st.rerun()
-        else:
-            st.info("🎤 Click 'Start Recording' above. ASR results will appear automatically after you stop recording.")
+                        st.error("❌ ASR processing failed. Please check your API key.")
         
-        # Navigation
-        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-        
-        with col1:
-            if st.button("⬅️ Previous") and st.session_state.current_test_index > 0:
-                st.session_state.current_test_index -= 1
-                st.session_state.recorded_audio = None  # Clear audio when moving
-                st.rerun()
-        
-        with col2:
-            if st.button("Skip ➡️"):
-                st.session_state.current_test_index += 1
-                st.session_state.recorded_audio = None  # Clear audio when moving
-                st.rerun()
-        
-        with col3:
-            if st.button("✅ Save & Next"):
-                # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key) or {}
-                asr_transcript = asr_result_data.get('transcript', None) if isinstance(asr_result_data, dict) else None
-                matches = asr_result_data.get('matches', False) if isinstance(asr_result_data, dict) else False
-                
-                if asr_transcript:
-                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
-                elif st.session_state.recorded_audio:
-                    asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    matches = False
-                else:
-                    st.warning("⚠️ No audio recorded! Please record audio first.")
-                    asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    matches = False
-                
-                result = {
-                    "qa_name": st.session_state.qa_name,
-                    "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
-                    "crop_name": crop_name,
-                    "crop_code": crop_code,
-                    "language": language,
-                    "expected": crop_name,
-                    "actual": asr_transcript if asr_transcript else asr_result,
-                    "match": "Yes" if matches else "No",
-                    "timestamp": datetime.now().isoformat(),
-                    "audio_recorded": st.session_state.recorded_audio is not None
-                }
-                st.session_state.test_results.append(result)
-                # Clear recorded audio and ASR results for next test
-                st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
-                st.session_state.current_test_index += 1
-                st.success("✅ Test saved! Moving to next crop...")
-                st.rerun()
-        
-        with col4:
-            if st.button("🏁 Finish Testing", type="primary"):
-                # Get ASR results from automatic processing
-                asr_result_data = st.session_state.get(asr_result_key) or {}
-                asr_transcript = asr_result_data.get('transcript', None) if isinstance(asr_result_data, dict) else None
-                matches = asr_result_data.get('matches', False) if isinstance(asr_result_data, dict) else False
-                
-                if asr_transcript:
-                    asr_result = f"{asr_transcript} (Match: {'Yes' if matches else 'No'})"
-                elif st.session_state.recorded_audio:
-                    asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
-                    matches = False
-                else:
-                    st.warning("⚠️ No audio recorded! Please record audio first.")
-                    asr_result = f"Recorded audio for {crop_name} (no audio recorded)"
-                    matches = False
-                
-                result = {
-                    "qa_name": st.session_state.qa_name,
-                    "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
-                    "crop_name": crop_name,
-                    "crop_code": crop_code,
-                    "language": language,
-                    "expected": crop_name,
-                    "actual": asr_transcript if asr_transcript else asr_result,
-                    "match": "Yes" if matches else "No",
-                    "timestamp": datetime.now().isoformat(),
-                    "audio_recorded": st.session_state.recorded_audio is not None
-                }
-                st.session_state.test_results.append(result)
-                # Jump to end to show results
-                st.session_state.current_test_index = len(st.session_state.test_data)
-                st.session_state.recorded_audio = None
-                st.session_state[asr_result_key] = None
-                st.session_state[asr_processed_key] = False
-                st.success("✅ Testing session completed! Showing results...")
-                st.rerun()
+        # End Session button (matches Flask version)
+        st.markdown("---")
+        if st.button("🏁 End Session & Get Reports", type="primary"):
+            st.session_state.current_test_index = len(st.session_state.test_data)
+            st.rerun()
     
     else:
         # Testing complete
