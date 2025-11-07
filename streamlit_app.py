@@ -877,12 +877,18 @@ def show_testing_interface():
             st.session_state[audio_base64_key] = audio_base64
         
         # Auto-refresh to detect audio immediately (polling mechanism)
+        # Only poll if we're waiting for audio AND audio_base64 might have been set
         # Check if audio was submitted but not yet processed
         if not st.session_state.get(f'audio_stored_{recording_key}', False):
-            # Use auto-refresh to check for audio every 1 second
-            import time
-            time.sleep(1)
-            st.rerun()
+            # Check if audio_base64 was just set (JavaScript might have updated it)
+            # If it's still empty, don't poll (avoid infinite loop)
+            if not audio_base64 or len(audio_base64) < 10:
+                # No audio yet, but check if we should poll
+                # Only poll if we recently clicked submit (check localStorage via JavaScript)
+                pass  # Don't poll if no audio_base64 at all
+            else:
+                # audio_base64 exists but not processed - process it immediately (handled below)
+                pass
         
         # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
