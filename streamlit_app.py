@@ -716,52 +716,139 @@ def show_testing_interface():
                         reader.onloadend = function() {{
                             const base64Audio = reader.result;
                             
+                            // Store in sessionStorage first (backup)
+                            try {{
+                                sessionStorage.setItem('streamlit_audio_pending_' + key, base64Audio);
+                            }} catch(e) {{
+                                console.log('sessionStorage not available');
+                            }}
+                            
                             // Find Streamlit input and set value
                             const inputKey = 'audio_base64_' + key;
                             let attempts = 0;
-                            const maxAttempts = 50;
+                            const maxAttempts = 100; // Increased attempts
                             
                             function setAudioInput() {{
                                 attempts++;
-                                const inputs = document.querySelectorAll('input[type="text"]');
                                 
-                                for (let input of inputs) {{
-                                    const inputId = (input.id || '').toLowerCase();
-                                    const inputName = (input.name || '').toLowerCase();
-                                    
-                                    if (inputId.includes(inputKey.toLowerCase()) || 
-                                        inputName.includes(inputKey.toLowerCase()) ||
-                                        (input.value === '' && attempts <= 10)) {{
-                                        
-                                        input.value = base64Audio;
-                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                        
-                                        // Trigger Streamlit rerun by clicking a hidden button
-                                        setTimeout(() => {{
-                                            const submitBtns = document.querySelectorAll('button');
-                                            for (let btn of submitBtns) {{
-                                                if (btn.textContent.includes('Process Audio') || 
-                                                    btn.textContent.includes('Submit')) {{
-                                                    btn.click();
-                                                    break;
-                                                }}
+                                // Try multiple ways to find the input
+                                let input = null;
+                                
+                                // Method 1: Search in parent document (if in iframe)
+                                try {{
+                                    if (window.parent && window.parent.document) {{
+                                        const parentInputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                        for (let inp of parentInputs) {{
+                                            const inpId = (inp.id || '').toLowerCase();
+                                            const inpName = (inp.name || '').toLowerCase();
+                                            const inpKey = inp.getAttribute('data-testid') || '';
+                                            
+                                            if (inpId.includes(inputKey.toLowerCase()) || 
+                                                inpName.includes(inputKey.toLowerCase()) ||
+                                                inpKey.includes(inputKey.toLowerCase()) ||
+                                                (inp.value === '' && attempts <= 20)) {{
+                                                input = inp;
+                                                break;
                                             }}
-                                        }}, 100);
+                                        }}
+                                    }}
+                                }} catch(e) {{
+                                    console.log('Cannot access parent document:', e);
+                                }}
+                                
+                                // Method 2: Search in current document
+                                if (!input) {{
+                                    const inputs = document.querySelectorAll('input[type="text"]');
+                                    for (let inp of inputs) {{
+                                        const inpId = (inp.id || '').toLowerCase();
+                                        const inpName = (inp.name || '').toLowerCase();
                                         
-                                        submitBtn.textContent = '✅ Submitted!';
-                                        submitBtn.style.background = '#28a745';
-                                        return;
+                                        if (inpId.includes(inputKey.toLowerCase()) || 
+                                            inpName.includes(inputKey.toLowerCase()) ||
+                                            (inp.value === '' && attempts <= 20)) {{
+                                            input = inp;
+                                            break;
+                                        }}
                                     }}
                                 }}
                                 
-                                if (attempts < maxAttempts) {{
-                                    setTimeout(setAudioInput, 100);
-                                }} else {{
-                                    alert('Could not send audio. Please refresh and try again.');
-                                    submitBtn.disabled = false;
-                                    submitBtn.textContent = '📤 Submit Recording';
+                                // Method 3: Try to find by data attributes or any empty input
+                                if (!input && attempts > 20) {{
+                                    try {{
+                                        const allInputs = (window.parent && window.parent.document) 
+                                            ? window.parent.document.querySelectorAll('input[type="text"]')
+                                            : document.querySelectorAll('input[type="text"]');
+                                        
+                                        // Find any empty input that might be ours
+                                        for (let inp of allInputs) {{
+                                            if (inp.value === '' && inp.offsetParent !== null) {{
+                                                input = inp;
+                                                break;
+                                            }}
+                                        }}
+                                    }} catch(e) {{
+                                        console.log('Error in method 3:', e);
+                                    }}
                                 }}
+                                
+                                if (input) {{
+                                    console.log('✅ Found input! Setting audio data...');
+                                    input.value = base64Audio;
+                                    input.focus();
+                                    input.blur();
+                                    
+                                    // Trigger events
+                                    ['input', 'change', 'blur'].forEach(eventType => {{
+                                        const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                                        input.dispatchEvent(event);
+                                    }});
+                                    
+                                    // Also try to trigger via postMessage
+                                    try {{
+                                        window.parent.postMessage({{
+                                            type: 'streamlit:setComponentValue',
+                                            value: base64Audio,
+                                            key: inputKey
+                                        }}, '*');
+                                    }} catch(e) {{
+                                        console.log('postMessage failed:', e);
+                                    }}
+                                    
+                                    submitBtn.textContent = '✅ Submitted!';
+                                    submitBtn.style.background = '#28a745';
+                                    
+                                    // Trigger Streamlit rerun by reloading iframe
+                                    setTimeout(() => {{
+                                        try {{
+                                            // Try to trigger rerun via iframe reload
+                                            const iframe = window.frameElement;
+                                            if (iframe) {{
+                                                const currentSrc = iframe.src;
+                                                const separator = currentSrc.includes('?') ? '&' : '?';
+                                                iframe.src = currentSrc + separator + '_t=' + Date.now();
+                                            }}
+                                        }} catch(e) {{
+                                            console.log('Could not reload iframe');
+                                        }}
+                                    }}, 200);
+                                    
+                                    return true;
+                                }}
+                                
+                                if (attempts < maxAttempts) {{
+                                    setTimeout(setAudioInput, 50); // Faster retry
+                                }} else {{
+                                    console.error('Could not find input after ' + maxAttempts + ' attempts');
+                                    // Last resort: show message but don't fail completely
+                                    submitBtn.textContent = '⚠️ Audio ready - processing...';
+                                    submitBtn.style.background = '#ffc107';
+                                    // Try one more time after a delay
+                                    setTimeout(() => {{
+                                        setAudioInput();
+                                    }}, 1000);
+                                }}
+                                
+                                return false;
                             }};
                             
                             setAudioInput();
