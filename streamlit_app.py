@@ -538,7 +538,7 @@ def show_testing_interface():
         """.format(recording_key=recording_key)
         
         # Render the audio recorder
-        components.html(audio_recorder_html, height=300, key=f"recorder_{recording_key}")
+        components.html(audio_recorder_html, height=300)
         
         # File uploader for audio
         st.markdown("---")
