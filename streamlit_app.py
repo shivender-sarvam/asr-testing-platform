@@ -859,32 +859,55 @@ def show_testing_interface():
                         keyword_badge = "✅ **Yes**" if result.get('matches') else "❌ **No**"
                         st.markdown(f"**Keyword Detected:** {keyword_badge}")
                         
-                        # Save result
-                        test_result = {
-                            "qa_name": st.session_state.qa_name,
-                            "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
-                            "crop_name": crop_name,
-                            "crop_code": crop_code,
-                            "language": language,
-                            "expected": crop_name,
-                            "actual": result['transcript'],
-                            "match": "Yes" if result.get('matches') else "No",
-                            "timestamp": datetime.now().isoformat(),
-                            "audio_recorded": True
-                        }
-                        st.session_state.test_results.append(test_result)
+                        # Save result (only once)
+                        result_saved_key = f'result_saved_{recording_key}'
+                        if not st.session_state.get(result_saved_key, False):
+                            test_result = {
+                                "qa_name": st.session_state.qa_name,
+                                "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                                "crop_name": crop_name,
+                                "crop_code": crop_code,
+                                "language": language,
+                                "expected": crop_name,
+                                "actual": result['transcript'],
+                                "match": "Yes" if result.get('matches') else "No",
+                                "timestamp": datetime.now().isoformat(),
+                                "audio_recorded": True
+                            }
+                            st.session_state.test_results.append(test_result)
+                            st.session_state[result_saved_key] = True
                         
-                        # Save result and move to next
-                        st.session_state.current_test_index += 1
-                        # Clear this recording's state
-                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
-                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
-                                   audio_submitted_key]:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+                        # Next button to continue
+                        st.markdown("---")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("➡️ Next Crop", type="primary", key=f"next_{recording_key}"):
+                                # Move to next crop
+                                st.session_state.current_test_index += 1
+                                # Clear this recording's state
+                                for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
+                                           f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
+                                           audio_submitted_key, result_saved_key]:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+                                st.rerun()
+                        with col2:
+                            if st.button("🔄 Record Again", key=f"rerecord_after_submit_{recording_key}"):
+                                # Clear submission state to allow re-recording
+                                st.session_state[audio_submitted_key] = False
+                                st.session_state[result_saved_key] = False
+                                # Remove the saved result
+                                if st.session_state.test_results and len(st.session_state.test_results) > 0:
+                                    # Remove last result if it matches this crop
+                                    last_result = st.session_state.test_results[-1]
+                                    if last_result.get('crop_name') == crop_name:
+                                        st.session_state.test_results.pop()
+                                st.rerun()
                     else:
                         st.error("❌ ASR processing failed. Please check your API key.")
+                        if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
+                            st.session_state[audio_submitted_key] = False
+                            st.rerun()
         
         # End Session button (matches Flask version)
         st.markdown("---")
@@ -906,16 +929,26 @@ def show_testing_interface():
         # Results table
         if st.session_state.test_results:
             results_df = pd.DataFrame(st.session_state.test_results)
-            st.dataframe(results_df)
+            st.markdown("### 📊 Test Results")
+            st.dataframe(results_df, use_container_width=True)
             
-            # Download CSV
+            # Download CSV - always show this button
+            st.markdown("---")
             csv = results_df.to_csv(index=False)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            email = st.session_state.user_info.get('email', 'unknown').replace('@', '_at_') if st.session_state.user_info else 'unknown'
+            language = st.session_state.selected_language or 'unknown'
+            filename = f"asr_test_results_{email}_{language}_{timestamp}.csv"
+            
             st.download_button(
                 label="📥 Download Results CSV",
                 data=csv,
-                file_name=f"asr_test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+                file_name=filename,
+                mime="text/csv",
+                type="primary"
             )
+        else:
+            st.warning("⚠️ No test results found. Please complete at least one test.")
         
         # Reset option
         if st.button("🔄 Start New Test", type="primary"):
