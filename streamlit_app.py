@@ -1083,18 +1083,30 @@ def show_testing_interface():
             st.markdown("---")
             if result.get('transcript'):
                 if current_attempt_num < max_attempts:
-                    # More attempts remaining - show button to continue
+                    # More attempts remaining - show buttons to continue
                     st.info(f"✅ Result saved! Continue with attempt {current_attempt_num + 1}/{max_attempts}")
-                    if st.button(f"➡️ Continue to Attempt {current_attempt_num + 1}", type="primary", key=f"continue_attempt_{recording_key}", use_container_width=True):
-                        # Move to next attempt
-                        st.session_state.current_attempt[crop_index] = current_attempt_num + 1
-                        # Clear this attempt's state
-                        result_saved_key = f'result_saved_{recording_key}'
-                        for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
-                                   f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button(f"➡️ Continue to Attempt {current_attempt_num + 1}", type="primary", key=f"continue_attempt_{recording_key}", use_container_width=True):
+                            # Move to next attempt
+                            st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                            # Clear this attempt's state
+                            result_saved_key = f'result_saved_{recording_key}'
+                            for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
+                                       f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
+                    with col2:
+                        if st.button("🔄 Record Again", type="secondary", key=f"record_again_streamlit_{recording_key}", use_container_width=True):
+                            # Same as continue - increment attempt and clear state
+                            st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                            result_saved_key = f'result_saved_{recording_key}'
+                            for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
+                                       f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
                 else:
                     # All attempts done - show button to move to next crop
                     st.info("✅ All 5 attempts completed for this crop!")
