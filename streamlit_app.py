@@ -432,6 +432,13 @@ def main_app():
             # Extract name from email (e.g., "shivender" from "shivender@sarvam.ai")
             st.session_state.qa_name = st.session_state.user_info['email'].split('@')[0].title()
     
+    # DEBUG: Show current app state
+    with st.sidebar.expander("🔍 DEBUG: App State", expanded=False):
+        st.write(f"**Has language:** {bool(st.session_state.selected_language)}")
+        st.write(f"**Has test_data:** {bool(st.session_state.test_data)}")
+        st.write(f"**Test data length:** {len(st.session_state.test_data) if st.session_state.test_data else 0}")
+        st.write(f"**Current index:** {st.session_state.current_test_index}")
+    
     if not st.session_state.selected_language:
         show_language_selection()
     elif not st.session_state.test_data:
