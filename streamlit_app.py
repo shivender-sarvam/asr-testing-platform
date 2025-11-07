@@ -947,18 +947,22 @@ def show_testing_interface():
                             st.session_state.current_attempt[crop_index] = current_attempt_num + 1
                             # Clear this attempt's state
                             result_saved_key = f'result_saved_{recording_key}'
-                            for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
-                                       f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
+                            keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
+                                           f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]
+                            for key in keys_to_clear:
                                 if key in st.session_state:
                                     del st.session_state[key]
                             st.rerun()
                     with col2:
                         if st.button("🔄 Record Again", type="secondary", key=f"record_again_streamlit_{recording_key}", use_container_width=True):
-                            # Same as continue - increment attempt and clear state
-                            st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                            # Increment attempt and clear state
+                            if current_attempt_num < max_attempts:
+                                st.session_state.current_attempt[crop_index] = current_attempt_num + 1
                             result_saved_key = f'result_saved_{recording_key}'
-                            for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
-                                       f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
+                            # Clear all state for this attempt
+                            keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
+                                           f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]
+                            for key in keys_to_clear:
                                 if key in st.session_state:
                                     del st.session_state[key]
                             st.rerun()
@@ -987,8 +991,9 @@ def show_testing_interface():
                 st.error("❌ ASR processing failed. Please check your API key or try recording again.")
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
-                    for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
-                               f'asr_result_{recording_key}', audio_submitted_key]:
+                    keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
+                                   f'asr_result_{recording_key}', audio_submitted_key]
+                    for key in keys_to_clear:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()
