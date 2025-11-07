@@ -735,22 +735,31 @@ def show_testing_interface():
                             submitBtn.disabled = true;
                             
                             try {{
-                                // Encode base64 for URL
-                                const encodedAudio = encodeURIComponent(base64Audio);
-                                
-                                // Get current URL
-                                const currentUrl = window.parent.location.href;
-                                const url = new URL(currentUrl);
-                                
-                                // Add audio data to URL
-                                url.searchParams.set('audio_data', encodedAudio);
-                                
-                                // Navigate to new URL (triggers Streamlit rerun)
-                                console.log('🔄 Navigating to URL with audio data...');
-                                window.parent.location.href = url.toString();
+                                // Check if audio is too large for URL (URLs have ~2000 char limit)
+                                // If too large, use localStorage + token approach
+                                if (base64Audio.length > 1500) {{
+                                    // Too large for URL - use localStorage with token
+                                    const token = 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                                    localStorage.setItem('streamlit_audio_token_' + token, base64Audio);
+                                    console.log('Audio too large for URL, using token:', token);
+                                    
+                                    // Send token in URL instead
+                                    const currentUrl = window.parent.location.href;
+                                    const url = new URL(currentUrl);
+                                    url.searchParams.set('audio_token', token);
+                                    window.parent.location.href = url.toString();
+                                }} else {{
+                                    // Small enough - send directly in URL
+                                    const encodedAudio = encodeURIComponent(base64Audio);
+                                    const currentUrl = window.parent.location.href;
+                                    const url = new URL(currentUrl);
+                                    url.searchParams.set('audio_data', encodedAudio);
+                                    console.log('🔄 Navigating to URL with audio data (length: ' + base64Audio.length + ')...');
+                                    window.parent.location.href = url.toString();
+                                }}
                             }} catch(e) {{
                                 console.error('Error setting URL:', e);
-                                alert('Error sending audio. Please try again or refresh the page.');
+                                alert('Error sending audio: ' + e.message + '. Please try again.');
                                 submitBtn.disabled = false;
                                 submitBtn.textContent = '📤 Submit Recording';
                                 submitBtn.style.background = '#007bff';
@@ -803,22 +812,57 @@ def show_testing_interface():
         
         # Read audio from URL query parameters (set by JavaScript)
         # This is the most reliable way to get data from JavaScript to Streamlit
+        audio_base64_from_url = None
+        audio_token_from_url = None
+        
         try:
             # Try new Streamlit API first
             if hasattr(st, 'query_params'):
                 query_params = st.query_params
                 audio_base64_from_url = query_params.get('audio_data', None)
-                if audio_base64_from_url:
-                    # Clear the param after reading
-                    st.query_params.clear()
+                audio_token_from_url = query_params.get('audio_token', None)
+                if audio_base64_from_url or audio_token_from_url:
+                    # Clear the params after reading
+                    new_params = dict(query_params)
+                    new_params.pop('audio_data', None)
+                    new_params.pop('audio_token', None)
+                    st.query_params = new_params
             else:
                 # Fallback to experimental API
                 query_params = st.experimental_get_query_params()
                 audio_base64_from_url = query_params.get('audio_data', [None])[0] if query_params.get('audio_data') else None
-                if audio_base64_from_url:
+                audio_token_from_url = query_params.get('audio_token', [None])[0] if query_params.get('audio_token') else None
+                if audio_base64_from_url or audio_token_from_url:
                     st.experimental_set_query_params()
-        except:
+        except Exception as e:
+            st.warning(f"Error reading query params: {e}")
             audio_base64_from_url = None
+            audio_token_from_url = None
+        
+        # If we got a token, try to read from localStorage via JavaScript injection
+        if audio_token_from_url:
+            # Inject JavaScript to read from localStorage
+            token_js = f"""
+            <script>
+                const token = '{audio_token_from_url}';
+                const audioData = localStorage.getItem('streamlit_audio_token_' + token);
+                if (audioData) {{
+                    // Store in a hidden input that Streamlit can read
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.id = 'audio_from_token';
+                    input.value = audioData;
+                    document.body.appendChild(input);
+                    // Also try to set it in URL
+                    const url = new URL(window.location);
+                    url.searchParams.set('audio_data', encodeURIComponent(audioData));
+                    window.history.replaceState({{}}, '', url);
+                }}
+            </script>
+            """
+            st.components.v1.html(token_js, height=0)
+            # Rerun to read the new URL param
+            st.rerun()
         
         # Also check session state
         audio_base64_key = f"audio_base64_{recording_key}"
