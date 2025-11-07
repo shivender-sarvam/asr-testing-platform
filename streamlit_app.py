@@ -1117,14 +1117,11 @@ def show_testing_interface():
         # Results summary
         if st.session_state.test_results:
             st.markdown(f"**Total Tests:** {len(st.session_state.test_results)}")
-            # Count matches
-            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('keyword_detected') == 'Yes'))
-            st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
-        
-        if st.session_state.test_results:
             # Count matches (handle both old 'accuracy' format and new 'match' format)
-            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('accuracy', 0) > 0))
+            matches_count = sum(1 for r in st.session_state.test_results if r.get('match') == 'Yes' or (r.get('match') is True) or (r.get('keyword_detected') == 'Yes') or (r.get('accuracy', 0) > 0))
             st.markdown(f"**Matches:** {matches_count} / {len(st.session_state.test_results)}")
+        else:
+            st.warning("⚠️ No test results found. Please complete at least one test.")
         
         # Results table - format like Flask
         if st.session_state.test_results:
