@@ -536,6 +536,9 @@ def show_csv_upload():
 
 def show_testing_interface():
     """Main testing interface - matches Flask/Render version exactly"""
+    # DEBUG: Check if we're in testing interface
+    st.info(f"🔍 DEBUG: In testing interface. Current index: {st.session_state.current_test_index}, Total crops: {len(st.session_state.test_data)}")
+    
     if st.session_state.current_test_index < len(st.session_state.test_data):
         current_crop = st.session_state.test_data[st.session_state.current_test_index]
         
@@ -774,11 +777,14 @@ def show_testing_interface():
             value=""
         )
         
-        # DEBUG: Show if audio_base64 is being received
-        if audio_base64:
-            st.info(f"🔍 DEBUG: Audio base64 received! Length: {len(audio_base64)} chars")
-        else:
-            st.info("🔍 DEBUG: No audio base64 data yet. Record audio to see it here.")
+        # DEBUG: Show if audio_base64 is being received - MAKE IT VERY VISIBLE
+        with st.expander("🔍 DEBUG INFO (Click to see)", expanded=True):
+            if audio_base64:
+                st.success(f"✅ Audio base64 received! Length: {len(audio_base64)} chars")
+                st.code(audio_base64[:100] + "..." if len(audio_base64) > 100 else audio_base64)
+            else:
+                st.warning("❌ No audio base64 data yet. Record audio to see it here.")
+                st.info("This means JavaScript is not sending audio to Streamlit. Check browser console for errors.")
         
         # Store audio in session state when recorded (but don't process yet)
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
@@ -843,8 +849,14 @@ def show_testing_interface():
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
         audio_submitted = st.session_state.get(audio_submitted_key, False)
         
-        # DEBUG: Show state
-        st.info(f"🔍 DEBUG: audio_stored={audio_stored}, audio_submitted={audio_submitted}")
+        # DEBUG: Show state - MAKE IT VERY VISIBLE
+        with st.expander("🔍 DEBUG STATE (Click to see)", expanded=True):
+            st.write(f"**audio_stored:** {audio_stored}")
+            st.write(f"**audio_submitted:** {audio_submitted}")
+            st.write(f"**recording_key:** {recording_key}")
+            st.write(f"**All session state keys containing 'recording':**")
+            recording_keys = [k for k in st.session_state.keys() if 'recording' in k.lower()]
+            st.write(recording_keys)
         
         if audio_stored and not audio_submitted:
             audio_bytes = st.session_state.get(f'audio_bytes_{recording_key}')
