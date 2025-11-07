@@ -44,3 +44,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+# Local secrets (don't commit)
+.streamlit/secrets.toml
