@@ -1076,9 +1076,26 @@ def show_testing_interface():
                         "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         "audio_recorded": True
                     }
+                    # Save to session state
                     st.session_state.test_results.append(test_result)
                     st.session_state[result_saved_key] = True
-                    st.success(f"✅ Result saved! Total results: {len(st.session_state.test_results)}")
+                    
+                    # IMMEDIATELY save to Azure (like Flask) - prevents data loss
+                    if AZURE_AVAILABLE:
+                        try:
+                            user_email = st.session_state.user_info.get('email', 'unknown@example.com') if st.session_state.user_info else 'unknown@example.com'
+                            azure_url = upload_single_test_result(
+                                test_result=test_result,
+                                user_email=user_email,
+                                language=language,
+                                session_id=st.session_state.session_id
+                            )
+                            st.success(f"✅ Saved to Azure! Total: {len(st.session_state.test_results)}")
+                        except Exception as e:
+                            st.warning(f"⚠️ Saved locally but Azure failed: {e}")
+                            st.success(f"✅ Result saved locally! Total: {len(st.session_state.test_results)}")
+                    else:
+                        st.success(f"✅ Result saved! Total: {len(st.session_state.test_results)}")
             
             # AUTO-ADVANCE like Flask (after showing results)
             st.markdown("---")
