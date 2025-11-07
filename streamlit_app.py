@@ -725,98 +725,36 @@ def show_testing_interface():
                                 console.log('localStorage not available');
                             }}
                             
-                            // Find and update Streamlit input
-                            const inputKey = 'audio_base64_' + key;
-                            let attempts = 0;
-                            const maxAttempts = 30;
+                            // Send audio to Streamlit via URL query parameter
+                            // This is the most reliable method - no input finding needed
+                            console.log('📤 Sending audio to Streamlit via URL...');
                             
-                            function updateInput() {{
-                                attempts++;
-                                console.log('Attempt ' + attempts + ': Looking for input ' + inputKey);
-                                
-                                if (attempts > maxAttempts) {{
-                                    console.error('❌ Could not find input after ' + maxAttempts + ' attempts');
-                                    alert('Could not send audio to Streamlit. Please refresh the page.');
-                                    submitBtn.disabled = false;
-                                    submitBtn.textContent = '📤 Submit Recording';
-                                    return;
-                                }}
-                                
-                                // Find input in parent document
-                                let inputs = [];
-                                if (window.parent && window.parent.document) {{
-                                    inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                }}
-                                
-                                console.log('Found ' + inputs.length + ' text inputs');
-                                
-                                for (let input of inputs) {{
-                                    const inputId = (input.id || '').toLowerCase();
-                                    const inputName = (input.name || '').toLowerCase();
-                                    const inputValue = input.value || '';
-                                    
-                                    // Check if this is our input (empty or matches key)
-                                    if (inputId.includes(inputKey.toLowerCase()) || 
-                                        inputName.includes(inputKey.toLowerCase()) ||
-                                        (inputValue === '' && attempts <= 5)) {{
-                                        
-                                        console.log('✅ FOUND INPUT! Setting value...');
-                                        input.value = base64Audio;
-                                        input.setAttribute('data-audio-submitted', 'true');
-                                        
-                                        // Trigger events
-                                        ['input', 'change'].forEach(eventType => {{
-                                            input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
-                                        }});
-                                        
-                                        console.log('✅ Value set! Sending to Streamlit via URL...');
-                                        
-                                        // Show success message
-                                        submitBtn.textContent = '✅ Submitted! Processing...';
-                                        submitBtn.style.background = '#28a745';
-                                        submitBtn.disabled = true;
-                                        
-                                        // Send audio to Streamlit via URL query parameter
-                                        // This is the most reliable method
-                                        try {{
-                                            // Encode base64 for URL (replace special chars)
-                                            const encodedAudio = encodeURIComponent(base64Audio);
-                                            
-                                            // Get current URL
-                                            const currentUrl = window.parent.location.href;
-                                            const url = new URL(currentUrl);
-                                            
-                                            // Add audio data to URL
-                                            url.searchParams.set('audio_data', encodedAudio);
-                                            
-                                            // Navigate to new URL (triggers Streamlit rerun)
-                                            console.log('🔄 Navigating to URL with audio data...');
-                                            window.parent.location.href = url.toString();
-                                        }} catch(e) {{
-                                            console.error('Error setting URL:', e);
-                                            // Fallback: try iframe refresh
-                                            try {{
-                                                const iframe = window.frameElement;
-                                                if (iframe) {{
-                                                    const currentSrc = iframe.src;
-                                                    const separator = currentSrc.includes('?') ? '&' : '?';
-                                                    iframe.src = currentSrc + separator + 'audio_data=' + encodeURIComponent(base64Audio);
-                                                }}
-                                            }} catch(e2) {{
-                                                console.error('Fallback also failed:', e2);
-                                                alert('Audio submitted! Please refresh the page manually.');
-                                            }}
-                                        }}
-                                        
-                                        return;
-                                    }}
-                                }}
-                                
-                                // Retry
-                                setTimeout(updateInput, 150);
-                            }};
+                            // Show success message
+                            submitBtn.textContent = '✅ Submitted! Processing...';
+                            submitBtn.style.background = '#28a745';
+                            submitBtn.disabled = true;
                             
-                            updateInput();
+                            try {{
+                                // Encode base64 for URL
+                                const encodedAudio = encodeURIComponent(base64Audio);
+                                
+                                // Get current URL
+                                const currentUrl = window.parent.location.href;
+                                const url = new URL(currentUrl);
+                                
+                                // Add audio data to URL
+                                url.searchParams.set('audio_data', encodedAudio);
+                                
+                                // Navigate to new URL (triggers Streamlit rerun)
+                                console.log('🔄 Navigating to URL with audio data...');
+                                window.parent.location.href = url.toString();
+                            }} catch(e) {{
+                                console.error('Error setting URL:', e);
+                                alert('Error sending audio. Please try again or refresh the page.');
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = '📤 Submit Recording';
+                                submitBtn.style.background = '#007bff';
+                            }}
                         }};
                         reader.readAsDataURL(audioBlob);
                     }});
