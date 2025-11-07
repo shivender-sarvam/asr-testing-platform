@@ -740,13 +740,41 @@ def show_testing_interface():
                                 sessionStorage.setItem(storageKey, base64Audio);
                                 console.log('✅ Audio stored in sessionStorage:', storageKey);
                                 
-                                // Send storage key in URL (much shorter than full base64)
-                                const currentUrl = window.parent.location.href;
-                                const url = new URL(currentUrl);
-                                url.searchParams.set('audio_key', storageKey);
-                                
-                                console.log('🔄 Navigating to URL with audio key...');
-                                window.parent.location.href = url.toString();
+                                // Try to update parent URL, but if that fails, use postMessage
+                                try {{
+                                    // Try to navigate parent (works if same origin)
+                                    const currentUrl = window.parent.location.href;
+                                    const url = new URL(currentUrl);
+                                    url.searchParams.set('audio_key', storageKey);
+                                    window.parent.location.href = url.toString();
+                                    console.log('🔄 Navigating parent to URL with audio key...');
+                                }} catch(navError) {{
+                                    // If navigation fails (cross-origin), use postMessage
+                                    console.log('Navigation blocked, using postMessage instead');
+                                    try {{
+                                        window.parent.postMessage({{
+                                            type: 'streamlit_audio_key',
+                                            key: storageKey
+                                        }}, '*');
+                                        console.log('📤 Sent audio key via postMessage');
+                                        
+                                        // Also store in a way Streamlit can access
+                                        // Set it in the current window's location (if possible)
+                                        try {{
+                                            const currentUrl = window.location.href;
+                                            const url = new URL(currentUrl);
+                                            url.searchParams.set('audio_key', storageKey);
+                                            window.location.href = url.toString();
+                                        }} catch(e2) {{
+                                            console.log('Could not update iframe URL either');
+                                        }}
+                                    }} catch(msgError) {{
+                                        console.error('postMessage also failed:', msgError);
+                                        // Last resort: store key in a global variable and show message
+                                        window.streamlitAudioKey = storageKey;
+                                        alert('Audio ready! The app will process it automatically.');
+                                    }}
+                                }}
                             }} catch(e) {{
                                 console.error('Error:', e);
                                 alert('Error sending audio: ' + e.message);
@@ -800,16 +828,18 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Read audio key from URL query parameters
-        # JavaScript stores audio in sessionStorage and sends the key in URL
+        # Read audio key from multiple sources:
+        # 1. URL query parameters (if navigation worked)
+        # 2. Session state (if postMessage was used)
+        # 3. JavaScript injection to read from sessionStorage directly
         audio_key_from_url = None
+        audio_key_from_session = st.session_state.get('pending_audio_key', None)
         
         try:
             # Try new Streamlit API first
             if hasattr(st, 'query_params'):
                 query_params = st.query_params
                 audio_key_from_url = query_params.get('audio_key', None)
-                # Don't clear yet - wait until we've successfully read the audio
             else:
                 # Fallback to experimental API
                 query_params = st.experimental_get_query_params()
@@ -817,6 +847,9 @@ def show_testing_interface():
         except Exception as e:
             st.warning(f"Error reading query params: {e}")
             audio_key_from_url = None
+        
+        # Use key from URL or session
+        audio_key_to_use = audio_key_from_url or audio_key_from_session
         
         # Create input field FIRST (before JavaScript injection)
         audio_base64_key = f"audio_base64_{recording_key}"
@@ -828,8 +861,53 @@ def show_testing_interface():
             help="Hidden input for audio from sessionStorage"
         )
         
+        # Inject JavaScript to listen for postMessage and also check sessionStorage
+        # This handles both URL navigation and postMessage approaches
+        audio_listener_js = """
+        <script>
+            (function() {
+                // Listen for postMessage from iframe
+                window.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'streamlit_audio_key') {
+                        console.log('📥 Received audio key via postMessage:', event.data.key);
+                        // Store in a hidden input or sessionStorage for Streamlit to read
+                        sessionStorage.setItem('streamlit_pending_audio_key', event.data.key);
+                        // Also try to update URL if possible
+                        try {
+                            const url = new URL(window.location);
+                            url.searchParams.set('audio_key', event.data.key);
+                            window.history.pushState({}, '', url);
+                            // Trigger Streamlit rerun by reloading
+                            window.location.reload();
+                        } catch(e) {
+                            console.log('Could not update URL, will use sessionStorage');
+                        }
+                    }
+                });
+                
+                // Also check if there's a key in sessionStorage that needs processing
+                const pendingKey = sessionStorage.getItem('streamlit_pending_audio_key');
+                if (pendingKey) {
+                    console.log('Found pending audio key in sessionStorage:', pendingKey);
+                    // Try to set it in URL
+                    try {
+                        const url = new URL(window.location);
+                        if (!url.searchParams.has('audio_key')) {
+                            url.searchParams.set('audio_key', pendingKey);
+                            window.history.pushState({}, '', url);
+                            window.location.reload();
+                        }
+                    } catch(e) {
+                        console.log('Could not set URL param');
+                    }
+                }
+            })();
+        </script>
+        """
+        components.html(audio_listener_js, height=0)
+        
         # If we got a storage key, inject JavaScript to read from sessionStorage and update the input
-        if audio_key_from_url and not audio_base64:
+        if audio_key_to_use and not audio_base64:
             # Mark that we're waiting for audio
             wait_key = f"waiting_audio_{recording_key}"
             if wait_key not in st.session_state:
@@ -839,7 +917,7 @@ def show_testing_interface():
             read_audio_js = f"""
             <script>
                 (function() {{
-                    const storageKey = '{audio_key_from_url}';
+                    const storageKey = '{audio_key_to_use}';
                     const inputKey = '{audio_base64_key}';
                     const audioData = sessionStorage.getItem(storageKey);
                     
