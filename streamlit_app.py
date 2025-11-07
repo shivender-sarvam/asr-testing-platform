@@ -166,10 +166,13 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
     try:
         # Get API key from secrets or environment
         if not api_key:
-            api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
+            try:
+                api_key = st.secrets.get('SARVAM_API_KEY', '')
+            except:
+                api_key = os.environ.get('SARVAM_API_KEY', '')
         
         if not api_key:
-            st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
+            st.error("❌ Sarvam API key not configured. Please add SARVAM_API_KEY to Streamlit secrets.")
             return None
         
         # Get BCP47 language code
@@ -189,19 +192,39 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
             'api-subscription-key': api_key
         }
         
+        # Debug info
+        st.info(f"🔍 Calling ASR API: {SARVAM_API_URL}, Language: {bcp47_lang}, Audio size: {len(audio_bytes)} bytes")
+        
         # Make API call
         response = requests.post(SARVAM_API_URL, files=files, data=data, headers=headers, timeout=30)
         
+        # Debug response
+        st.info(f"🔍 API Response Status: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
+            st.info(f"🔍 API Response: {result}")
             transcript = result.get('transcript', result.get('text', '')).strip()
+            if transcript:
+                st.success(f"✅ ASR Transcript: {transcript}")
             return transcript
         else:
-            st.error(f"Sarvam API error: {response.status_code}")
+            error_msg = f"Sarvam API error: {response.status_code}"
+            try:
+                error_detail = response.json()
+                error_msg += f" - {error_detail}"
+            except:
+                error_msg += f" - {response.text[:200]}"
+            st.error(error_msg)
             return None
             
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ ASR API request failed: {str(e)}")
+        return None
     except Exception as e:
-        st.warning(f"⚠️ ASR API call failed: {str(e)}. Using mock transcription.")
+        st.error(f"❌ ASR API call failed: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return None
 
 def check_match(expected_text, actual_text):
