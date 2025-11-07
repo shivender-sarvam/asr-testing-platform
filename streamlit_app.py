@@ -784,208 +784,28 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Read audio key from multiple sources:
-        # 1. URL query parameters (if navigation worked)
-        # 2. Session state (if postMessage was used)
-        # 3. JavaScript injection to read from sessionStorage directly
-        audio_key_from_url = None
-        audio_key_from_session = st.session_state.get('pending_audio_key', None)
-        
-        try:
-            # Try new Streamlit API first
-            if hasattr(st, 'query_params'):
-                query_params = st.query_params
-                audio_key_from_url = query_params.get('audio_key', None)
-            else:
-                # Fallback to experimental API
-                query_params = st.experimental_get_query_params()
-                audio_key_from_url = query_params.get('audio_key', [None])[0] if query_params.get('audio_key') else None
-        except Exception as e:
-            st.warning(f"Error reading query params: {e}")
-            audio_key_from_url = None
-        
-        # Use key from URL or session
-        audio_key_to_use = audio_key_from_url or audio_key_from_session
-        
-        # Create input field FIRST (before JavaScript injection)
-        audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64 = st.text_input(
-            "Audio from storage",
-            key=audio_base64_key,
-            label_visibility="collapsed",
-            value=st.session_state.get(audio_base64_key, ""),
-            help="Hidden input for audio from sessionStorage"
+        # SIMPLE APPROACH: File uploader for audio
+        # JavaScript downloads the file, user uploads it here
+        st.markdown("---")
+        st.markdown("**📤 Upload your recorded audio:**")
+        uploaded_audio = st.file_uploader(
+            "Choose audio file",
+            type=['webm', 'wav', 'mp3', 'ogg'],
+            key=f"audio_upload_{recording_key}",
+            label_visibility="collapsed"
         )
         
-        # Inject JavaScript to listen for postMessage and also check sessionStorage
-        # This handles both URL navigation and postMessage approaches
-        audio_listener_js = """
-        <script>
-            (function() {
-                // Listen for postMessage from iframe
-                window.addEventListener('message', function(event) {
-                    if (event.data && event.data.type === 'streamlit_audio_key') {
-                        console.log('📥 Received audio key via postMessage:', event.data.key);
-                        // Store in sessionStorage for Streamlit to read
-                        sessionStorage.setItem('streamlit_pending_audio_key', event.data.key);
-                        // Try to update URL without reload (if same origin)
-                        try {
-                            const url = new URL(window.location);
-                            url.searchParams.set('audio_key', event.data.key);
-                            window.history.pushState({}, '', url);
-                            console.log('✅ Updated URL with audio key');
-                        } catch(e) {
-                            console.log('Could not update URL, using sessionStorage');
-                        }
-                    }
-                });
-                
-                // Check if there's a pending key in sessionStorage
-                const pendingKey = sessionStorage.getItem('streamlit_pending_audio_key');
-                if (pendingKey) {
-                    console.log('Found pending audio key:', pendingKey);
-                    // Try to set it in URL if not already there
-                    try {
-                        const url = new URL(window.location);
-                        if (!url.searchParams.has('audio_key')) {
-                            url.searchParams.set('audio_key', pendingKey);
-                            window.history.pushState({}, '', url);
-                            console.log('✅ Set audio key in URL');
-                        }
-                        // Clear from sessionStorage since we've processed it
-                        sessionStorage.removeItem('streamlit_pending_audio_key');
-                    } catch(e) {
-                        console.log('Could not set URL param');
-                    }
-                }
-            })();
-        </script>
-        """
-        components.html(audio_listener_js, height=0)
+        # Process uploaded audio
+        audio_base64 = None
+        if uploaded_audio:
+            # Read audio file
+            audio_bytes = uploaded_audio.read()
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            # Add data URI prefix
+            mime_type = uploaded_audio.type or 'audio/webm'
+            audio_base64 = f"data:{mime_type};base64,{audio_base64}"
         
-        # Also check sessionStorage for pending key (set by postMessage listener)
-        # This is a fallback if URL update didn't work
-        if not audio_key_to_use:
-            # Inject JS to check sessionStorage and put key in URL
-            check_storage_js = """
-            <script>
-                const pendingKey = sessionStorage.getItem('streamlit_pending_audio_key');
-                if (pendingKey) {
-                    try {
-                        const url = new URL(window.location);
-                        if (!url.searchParams.has('audio_key')) {
-                            url.searchParams.set('audio_key', pendingKey);
-                            window.history.pushState({}, '', url);
-                            // Trigger rerun by changing URL
-                            window.location.search = url.search;
-                        }
-                    } catch(e) {
-                        console.log('Could not update URL from sessionStorage');
-                    }
-                }
-            </script>
-            """
-            components.html(check_storage_js, height=0)
-        
-        # If we got a storage key, inject JavaScript to read from sessionStorage and update the input
-        if audio_key_to_use and not audio_base64:
-            # Mark that we're waiting for audio
-            wait_key = f"waiting_audio_{recording_key}"
-            if wait_key not in st.session_state:
-                st.session_state[wait_key] = True
-            
-            # Inject JavaScript to read from sessionStorage and update the Streamlit input
-            read_audio_js = f"""
-            <script>
-                (function() {{
-                    const storageKey = '{audio_key_to_use}';
-                    const inputKey = '{audio_base64_key}';
-                    const audioData = sessionStorage.getItem(storageKey);
-                    
-                    if (audioData) {{
-                        console.log('✅ Found audio in sessionStorage, length:', audioData.length);
-                        
-                        // Find the Streamlit input field and update it
-                        function updateStreamlitInput() {{
-                            const inputs = document.querySelectorAll('input[type="text"]');
-                            
-                            for (let input of inputs) {{
-                                const inputId = (input.id || '').toLowerCase();
-                                const inputName = (input.name || '').toLowerCase();
-                                
-                                // Check if this is our input (empty or matches key)
-                                if (inputId.includes(inputKey.toLowerCase()) || 
-                                    inputName.includes(inputKey.toLowerCase()) ||
-                                    (input.value === '' && input.offsetParent !== null)) {{
-                                    
-                                    console.log('✅ Found Streamlit input! Setting value...');
-                                    input.value = audioData;
-                                    input.focus();
-                                    input.blur();
-                                    
-                                    // Trigger events
-                                    ['input', 'change', 'blur'].forEach(eventType => {{
-                                        const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
-                                        input.dispatchEvent(event);
-                                    }});
-                                    
-                                    // Set a flag in sessionStorage that Streamlit can check
-                                    sessionStorage.setItem('streamlit_audio_ready', 'true');
-                                    
-                                    // Clean up
-                                    sessionStorage.removeItem(storageKey);
-                                    
-                                    console.log('✅ Input updated and flagged as ready');
-                                    return true;
-                                }}
-                            }}
-                            return false;
-                        }};
-                        
-                        // Try immediately
-                        if (!updateStreamlitInput()) {{
-                            // Retry a few times
-                            let attempts = 0;
-                            const maxAttempts = 20;
-                            const interval = setInterval(() => {{
-                                attempts++;
-                                if (updateStreamlitInput() || attempts >= maxAttempts) {{
-                                    clearInterval(interval);
-                                }}
-                            }}, 100);
-                        }}
-                    }} else {{
-                        console.error('❌ Audio not found in sessionStorage for key:', storageKey);
-                    }}
-                }})();
-            </script>
-            """
-            components.html(read_audio_js, height=0)
-            
-            # Poll for the audio value (check if JavaScript set it)
-            # Only poll if we're waiting and haven't gotten audio yet
-            if st.session_state.get(wait_key, False) and not audio_base64:
-                import time
-                time.sleep(0.5)  # Give JavaScript time to set the value
-                # Check if audio was set (rerun will pick it up)
-                st.rerun()
-        
-        # Store in session state
-        if audio_base64:
-            st.session_state[audio_base64_key] = audio_base64
-            # Clear the URL param now that we've successfully read the audio
-            if audio_key_from_url:
-                try:
-                    if hasattr(st, 'query_params'):
-                        new_params = dict(st.query_params)
-                        new_params.pop('audio_key', None)
-                        st.query_params = new_params
-                    else:
-                        st.experimental_set_query_params()
-                except:
-                    pass
-        
-        # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
+        # Auto-process when audio is uploaded - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
                 # Audio detected! Process it immediately (no waiting)
