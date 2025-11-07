@@ -839,48 +839,26 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # Add a hidden text input to receive base64 audio from JavaScript
-        # This will be populated automatically when recording stops
-        # Also add a data attribute to help JavaScript find it
-        audio_base64 = st.text_input(
-            "Audio Data (hidden)",
-            key=f"audio_base64_{recording_key}",
-            label_visibility="collapsed",
-            value="",
-            help="Hidden input for audio data"
+        # File uploader for audio - JavaScript will download file, user uploads it
+        st.markdown("---")
+        st.markdown("**After recording, download the audio file above, then upload it here:**")
+        uploaded_audio = st.file_uploader(
+            "Upload Recorded Audio",
+            type=['webm', 'wav', 'mp3', 'ogg'],
+            key=f"audio_upload_{recording_key}",
+            help="Download the audio file from the recorder above, then upload it here"
         )
         
-        # Also try to read from window object as fallback
-        # Note: This won't work directly, but we can use a button to trigger
-        if st.button("🔄 Check for Audio Data", key=f"check_audio_{recording_key}"):
-            st.info("Checking for audio data...")
-            st.rerun()
-        
-        # DEBUG: Show if audio_base64 is being received - ALWAYS VISIBLE
-        st.error("🔍🔍🔍 AUDIO DEBUG 🔍🔍🔍")
-        if audio_base64:
-            st.success(f"✅ Audio base64 received! Length: {len(audio_base64)} chars")
-            st.code(audio_base64[:100] + "..." if len(audio_base64) > 100 else audio_base64)
-        else:
-            st.warning("❌ No audio base64 data yet. Record audio to see it here.")
-            st.info("This means JavaScript is not sending audio to Streamlit. Check browser console for errors.")
-        
-        # Store audio in session state when recorded (but don't process yet)
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+        # Process uploaded audio
+        if uploaded_audio is not None:
             if not st.session_state.get(f'audio_stored_{recording_key}', False):
                 try:
-                    # Extract base64 part after comma
-                    if ',' in audio_base64:
-                        base64_data = audio_base64.split(',')[1]
-                        mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
-                    else:
-                        base64_data = audio_base64
-                        mime_type = 'audio/webm'
-                    
-                    audio_bytes = base64.b64decode(base64_data)
+                    audio_bytes = uploaded_audio.read()
                     
                     # Convert webm to wav if needed
                     audio_format = 'wav'
+                    mime_type = uploaded_audio.type or 'audio/webm'
+                    
                     if 'webm' in mime_type.lower():
                         try:
                             from pydub import AudioSegment
@@ -891,38 +869,21 @@ def show_testing_interface():
                             audio_segment.export(wav_buffer, format="wav")
                             audio_bytes = wav_buffer.getvalue()
                             audio_format = 'wav'
-                        except:
-                            try:
-                                import tempfile
-                                import subprocess
-                                import os
-                                with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_webm:
-                                    temp_webm.write(audio_bytes)
-                                    temp_webm_path = temp_webm.name
-                                temp_wav_path = temp_webm_path.replace('.webm', '.wav')
-                                result = subprocess.run([
-                                    'ffmpeg', '-i', temp_webm_path, '-ar', '16000', '-ac', '1', '-f', 'wav', '-y', temp_wav_path
-                                ], capture_output=True, text=True, timeout=10)
-                                if result.returncode == 0:
-                                    with open(temp_wav_path, 'rb') as f:
-                                        audio_bytes = f.read()
-                                    audio_format = 'wav'
-                                try:
-                                    os.unlink(temp_webm_path)
-                                    if os.path.exists(temp_wav_path):
-                                        os.unlink(temp_wav_path)
-                                except:
-                                    pass
-                            except:
-                                pass
+                        except Exception as e:
+                            st.warning(f"Could not convert webm to wav: {e}. Using original format.")
+                            audio_format = 'webm'
                     
                     # Store audio for later processing
                     st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
                     st.session_state[f'audio_format_{recording_key}'] = audio_format
                     st.session_state[f'audio_stored_{recording_key}'] = True
+                    st.success("✅ Audio uploaded and stored!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
+        
+        # DEBUG: Show upload status
+        st.info(f"📤 Upload status: {'✅ Audio uploaded!' if uploaded_audio else '⏳ Waiting for audio upload...'}")
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
