@@ -168,6 +168,10 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         if not api_key:
             api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', ''))
         
+        # Fallback to default API key if not in secrets
+        if not api_key:
+            api_key = "sk_toqvlitk_ddtpgQ9IB4slOBcFLYkQzOM2"  # Default fallback key
+        
         if not api_key:
             st.warning("⚠️ Sarvam API key not configured. Using mock transcription.")
             return None
