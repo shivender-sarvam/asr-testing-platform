@@ -14,31 +14,44 @@ def get_azure_config():
     """
     Get Azure storage configuration from environment variables or Streamlit secrets.
     Works in both Flask (os.environ) and Streamlit (st.secrets) contexts.
+    This function is called lazily (only when needed), not at module import time.
     """
     # Try Streamlit secrets first (for Streamlit Cloud)
+    # Only try to access secrets if we're actually in a Streamlit runtime context
     try:
         import streamlit as st
-        if hasattr(st, 'secrets') and st.secrets:
+        # Check if we're in a Streamlit runtime (not just importing the module)
+        # This prevents errors during import time
+        if hasattr(st, 'secrets'):
             try:
-                # Access secrets safely - handle both dict-like and object-like access
-                if hasattr(st.secrets, 'get'):
-                    account_name = st.secrets.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
-                    container_name = st.secrets.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
-                    account_key = st.secrets.get('AZURE_STORAGE_ACCOUNT_KEY')
-                else:
-                    # Try attribute access
-                    account_name = getattr(st.secrets, 'AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
-                    container_name = getattr(st.secrets, 'AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
-                    account_key = getattr(st.secrets, 'AZURE_STORAGE_ACCOUNT_KEY', None)
-                
-                if account_key:
-                    return account_name, container_name, account_key
-            except (KeyError, AttributeError, TypeError) as e:
-                # If secrets access fails, fall back to environment variables
-                logger.warning(f"Could not read from Streamlit secrets: {e}. Falling back to environment variables.")
+                # Try to access secrets - this might fail if not in runtime context
+                secrets_obj = st.secrets
+                if secrets_obj is not None:
+                    # Access secrets safely - handle both dict-like and object-like access
+                    try:
+                        if hasattr(secrets_obj, 'get'):
+                            # Dict-like access
+                            account_name = secrets_obj.get('AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
+                            container_name = secrets_obj.get('AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
+                            account_key = secrets_obj.get('AZURE_STORAGE_ACCOUNT_KEY')
+                        else:
+                            # Attribute access
+                            account_name = getattr(secrets_obj, 'AZURE_STORAGE_ACCOUNT_NAME', 'sarvamweb')
+                            container_name = getattr(secrets_obj, 'AZURE_STORAGE_CONTAINER_NAME', 'whatsappmedia')
+                            account_key = getattr(secrets_obj, 'AZURE_STORAGE_ACCOUNT_KEY', None)
+                        
+                        if account_key:
+                            return account_name, container_name, account_key
+                    except (KeyError, AttributeError, TypeError, RuntimeError) as e:
+                        # If secrets access fails, fall back to environment variables
+                        logger.debug(f"Could not read from Streamlit secrets: {e}. Falling back to environment variables.")
+                        pass
+            except (RuntimeError, AttributeError) as e:
+                # Streamlit not in runtime context (e.g., during import)
+                logger.debug(f"Streamlit not in runtime context: {e}. Using environment variables.")
                 pass
-    except (ImportError, AttributeError, RuntimeError) as e:
-        # Not in Streamlit context or Streamlit not available, fall back to os.environ
+    except (ImportError, AttributeError) as e:
+        # Streamlit not available, fall back to os.environ
         logger.debug(f"Streamlit not available: {e}. Using environment variables.")
         pass
     

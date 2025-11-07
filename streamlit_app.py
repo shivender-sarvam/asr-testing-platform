@@ -11,12 +11,15 @@ from urllib.parse import urlencode, parse_qs
 import streamlit.components.v1 as components
 
 # Import Azure service for saving results
+# Catch ALL exceptions (not just ImportError) because azure_service might raise KeyError
+# if Streamlit secrets aren't available during import
 try:
     from azure_service import upload_single_test_result, upload_asr_test_results
     AZURE_AVAILABLE = True
-except ImportError:
+except Exception as e:
     AZURE_AVAILABLE = False
-    st.warning("⚠️ Azure service not available - results will only be saved in session")
+    # Don't show warning during import - it might not be initialized yet
+    # Warning will be shown later if needed
 
 # Page config
 st.set_page_config(
