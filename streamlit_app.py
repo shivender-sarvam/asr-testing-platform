@@ -836,6 +836,11 @@ def show_testing_interface():
         
         # If we got a storage key, inject JavaScript to read from sessionStorage and update the input
         if audio_key_from_url and not audio_base64:
+            # Mark that we're waiting for audio
+            wait_key = f"waiting_audio_{recording_key}"
+            if wait_key not in st.session_state:
+                st.session_state[wait_key] = True
+            
             # Inject JavaScript to read from sessionStorage and update the Streamlit input
             read_audio_js = f"""
             <script>
@@ -850,48 +855,52 @@ def show_testing_interface():
                         // Find the Streamlit input field and update it
                         function updateStreamlitInput() {{
                             const inputs = document.querySelectorAll('input[type="text"]');
-                            console.log('Looking for input, found ' + inputs.length + ' inputs');
                             
                             for (let input of inputs) {{
                                 const inputId = (input.id || '').toLowerCase();
                                 const inputName = (input.name || '').toLowerCase();
                                 
-                                // Check if this is our input
+                                // Check if this is our input (empty or matches key)
                                 if (inputId.includes(inputKey.toLowerCase()) || 
                                     inputName.includes(inputKey.toLowerCase()) ||
-                                    input.value === '') {{
+                                    (input.value === '' && input.offsetParent !== null)) {{
                                     
                                     console.log('✅ Found Streamlit input! Setting value...');
                                     input.value = audioData;
+                                    input.focus();
+                                    input.blur();
                                     
-                                    // Trigger events to notify Streamlit
+                                    // Trigger events
                                     ['input', 'change', 'blur'].forEach(eventType => {{
-                                        input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
+                                        const event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                                        input.dispatchEvent(event);
                                     }});
                                     
-                                    // Also try to trigger Streamlit's rerun via postMessage
-                                    try {{
-                                        window.parent.postMessage({{
-                                            type: 'streamlit:setComponentValue',
-                                            value: audioData
-                                        }}, '*');
-                                    }} catch(e) {{
-                                        console.log('postMessage failed:', e);
-                                    }}
+                                    // Set a flag in sessionStorage that Streamlit can check
+                                    sessionStorage.setItem('streamlit_audio_ready', 'true');
                                     
                                     // Clean up
                                     sessionStorage.removeItem(storageKey);
                                     
-                                    console.log('✅ Input updated, waiting for Streamlit to detect...');
-                                    return;
+                                    console.log('✅ Input updated and flagged as ready');
+                                    return true;
                                 }}
                             }}
-                            
-                            // Retry if not found
-                            setTimeout(updateStreamlitInput, 100);
+                            return false;
                         }};
                         
-                        updateStreamlitInput();
+                        // Try immediately
+                        if (!updateStreamlitInput()) {{
+                            // Retry a few times
+                            let attempts = 0;
+                            const maxAttempts = 20;
+                            const interval = setInterval(() => {{
+                                attempts++;
+                                if (updateStreamlitInput() || attempts >= maxAttempts) {{
+                                    clearInterval(interval);
+                                }}
+                            }}, 100);
+                        }}
                     }} else {{
                         console.error('❌ Audio not found in sessionStorage for key:', storageKey);
                     }}
@@ -900,10 +909,13 @@ def show_testing_interface():
             """
             components.html(read_audio_js, height=0)
             
-            # Give JavaScript time to set the value, then rerun
-            import time
-            time.sleep(0.3)
-            st.rerun()
+            # Poll for the audio value (check if JavaScript set it)
+            # Only poll if we're waiting and haven't gotten audio yet
+            if st.session_state.get(wait_key, False) and not audio_base64:
+                import time
+                time.sleep(0.5)  # Give JavaScript time to set the value
+                # Check if audio was set (rerun will pick it up)
+                st.rerun()
         
         # Store in session state
         if audio_base64:
