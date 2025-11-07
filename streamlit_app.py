@@ -865,18 +865,24 @@ def show_testing_interface():
                                     input.value = audioData;
                                     
                                     // Trigger events to notify Streamlit
-                                    ['input', 'change'].forEach(eventType => {{
+                                    ['input', 'change', 'blur'].forEach(eventType => {{
                                         input.dispatchEvent(new Event(eventType, {{ bubbles: true }}));
                                     }});
+                                    
+                                    // Also try to trigger Streamlit's rerun via postMessage
+                                    try {{
+                                        window.parent.postMessage({{
+                                            type: 'streamlit:setComponentValue',
+                                            value: audioData
+                                        }}, '*');
+                                    }} catch(e) {{
+                                        console.log('postMessage failed:', e);
+                                    }}
                                     
                                     // Clean up
                                     sessionStorage.removeItem(storageKey);
                                     
-                                    // Trigger page reload to make Streamlit read the value
-                                    setTimeout(() => {{
-                                        window.location.reload();
-                                    }}, 300);
-                                    
+                                    console.log('✅ Input updated, waiting for Streamlit to detect...');
                                     return;
                                 }}
                             }}
