@@ -878,11 +878,8 @@ def show_testing_interface():
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
         
-        # Auto-rerun to check for audio (polling mechanism)
-        if not st.session_state.get(f'audio_stored_{recording_key}', False):
-            import time
-            time.sleep(0.5)  # Small delay to allow JavaScript to update
-            st.rerun()
+        # Don't auto-rerun - let JavaScript handle it via page reload
+        # The JavaScript will trigger a page reload when it successfully sets the input value
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
