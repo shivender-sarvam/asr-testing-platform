@@ -742,7 +742,7 @@ def show_testing_interface():
                     # Call Sarvam ASR API
                     with st.spinner("🔄 Processing audio with ASR..."):
                         asr_transcript = call_sarvam_asr(
-                            audio_data,
+                            st.session_state.recorded_audio,
                             language,
                             st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
                         )
@@ -756,7 +756,7 @@ def show_testing_interface():
                         asr_result = f"Recorded audio for {crop_name} (ASR processing failed - check API key)"
                         accuracy = 0.0
                 else:
-                    st.warning("⚠️ No audio uploaded! Accuracy will be 0%. Please upload audio for ASR processing.")
+                    st.warning("⚠️ No audio recorded! Accuracy will be 0%. Please record audio first.")
                     asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
                     accuracy = 0.0
                 
@@ -789,7 +789,7 @@ def show_testing_interface():
                     # Call Sarvam ASR API
                     with st.spinner("🔄 Processing audio with ASR..."):
                         asr_transcript = call_sarvam_asr(
-                            audio_data,
+                            st.session_state.recorded_audio,
                             language,
                             st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
                         )
