@@ -753,6 +753,12 @@ def show_testing_interface():
             value=""
         )
         
+        # Debug: Show if audio was received
+        if audio_base64:
+            st.caption(f"🔍 Audio received: {len(audio_base64)} chars")
+        else:
+            st.caption("🔍 Waiting for audio... (Click Start Recording, then Stop)")
+        
         # Convert base64 to bytes if audio was recorded and process ASR automatically
         asr_result_key = f"asr_result_{recording_key}"
         asr_processed_key = f"asr_processed_{recording_key}"
