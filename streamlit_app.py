@@ -809,17 +809,11 @@ def show_testing_interface():
             if hasattr(st, 'query_params'):
                 query_params = st.query_params
                 audio_key_from_url = query_params.get('audio_key', None)
-                if audio_key_from_url:
-                    # Clear the param after reading
-                    new_params = dict(query_params)
-                    new_params.pop('audio_key', None)
-                    st.query_params = new_params
+                # Don't clear yet - wait until we've successfully read the audio
             else:
                 # Fallback to experimental API
                 query_params = st.experimental_get_query_params()
                 audio_key_from_url = query_params.get('audio_key', [None])[0] if query_params.get('audio_key') else None
-                if audio_key_from_url:
-                    st.experimental_set_query_params()
         except Exception as e:
             st.warning(f"Error reading query params: {e}")
             audio_key_from_url = None
@@ -920,6 +914,17 @@ def show_testing_interface():
         # Store in session state
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
+            # Clear the URL param now that we've successfully read the audio
+            if audio_key_from_url:
+                try:
+                    if hasattr(st, 'query_params'):
+                        new_params = dict(st.query_params)
+                        new_params.pop('audio_key', None)
+                        st.query_params = new_params
+                    else:
+                        st.experimental_set_query_params()
+                except:
+                    pass
         
         # Auto-process when audio_base64 is received - IMMEDIATE PROCESSING
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
