@@ -574,10 +574,10 @@ def show_testing_interface():
         recording_key = f"recording_{st.session_state.current_test_index}"
         
         # Custom Audio Recorder HTML Component
-        # Use .format() instead of f-string to avoid issues with curly braces
-        audio_recorder_html = """
-        <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
-            <button id="startBtn-{recording_key}" style="
+        # Use string replacement to avoid format string issues
+        audio_recorder_html_template = """
+        <div id="audio-recorder-RECORDING_KEY" style="text-align: center; padding: 20px;">
+            <button id="startBtn-RECORDING_KEY" style="
                 background: #1e3c72;
                 color: white;
                 border: none;
@@ -588,7 +588,7 @@ def show_testing_interface():
                 margin: 5px;
             ">🎤 Start Recording</button>
             
-            <button id="stopBtn-{recording_key}" disabled style="
+            <button id="stopBtn-RECORDING_KEY" disabled style="
                 background: #dc3545;
                 color: white;
                 border: none;
@@ -600,14 +600,14 @@ def show_testing_interface():
                 opacity: 0.5;
             ">⏹️ Stop Recording</button>
             
-            <div id="status-{recording_key}" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
+            <div id="status-RECORDING_KEY" style="margin: 10px 0; font-weight: bold; color: #dc3545; display: none;">
                 🔴 Recording... Speak clearly!
             </div>
             
-            <div id="playback-{recording_key}" style="margin: 20px 0; display: none;">
+            <div id="playback-RECORDING_KEY" style="margin: 20px 0; display: none;">
                 <p style="color: #28a745; font-weight: bold;">✅ Recording completed! Listen to your recording:</p>
-                <audio id="audioPlayer-{recording_key}" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
-                <a id="downloadLink-{recording_key}" download="recording.wav" style="
+                <audio id="audioPlayer-RECORDING_KEY" controls style="width: 100%; max-width: 500px; margin: 10px auto; display: block;"></audio>
+                <a id="downloadLink-RECORDING_KEY" download="recording.wav" style="
                     display: inline-block;
                     background: #28a745;
                     color: white;
@@ -621,7 +621,7 @@ def show_testing_interface():
         
         <script>
         (function() {{
-            const key = '{recording_key}';
+            const key = 'RECORDING_KEY';
             let mediaRecorder;
             let audioChunks = [];
             let audioBlob = null;
@@ -758,7 +758,9 @@ def show_testing_interface():
             }});
         }})();
         </script>
-        """.format(recording_key=recording_key)
+        """
+        # Replace placeholder with actual recording key
+        audio_recorder_html = audio_recorder_html_template.replace('RECORDING_KEY', recording_key)
         
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
