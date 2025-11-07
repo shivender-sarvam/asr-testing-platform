@@ -870,33 +870,34 @@ def show_testing_interface():
                 window.addEventListener('message', function(event) {
                     if (event.data && event.data.type === 'streamlit_audio_key') {
                         console.log('📥 Received audio key via postMessage:', event.data.key);
-                        // Store in a hidden input or sessionStorage for Streamlit to read
+                        // Store in sessionStorage for Streamlit to read
                         sessionStorage.setItem('streamlit_pending_audio_key', event.data.key);
-                        // Also try to update URL if possible
+                        // Try to update URL without reload (if same origin)
                         try {
                             const url = new URL(window.location);
                             url.searchParams.set('audio_key', event.data.key);
                             window.history.pushState({}, '', url);
-                            // Trigger Streamlit rerun by reloading
-                            window.location.reload();
+                            console.log('✅ Updated URL with audio key');
                         } catch(e) {
-                            console.log('Could not update URL, will use sessionStorage');
+                            console.log('Could not update URL, using sessionStorage');
                         }
                     }
                 });
                 
-                // Also check if there's a key in sessionStorage that needs processing
+                // Check if there's a pending key in sessionStorage
                 const pendingKey = sessionStorage.getItem('streamlit_pending_audio_key');
                 if (pendingKey) {
-                    console.log('Found pending audio key in sessionStorage:', pendingKey);
-                    // Try to set it in URL
+                    console.log('Found pending audio key:', pendingKey);
+                    // Try to set it in URL if not already there
                     try {
                         const url = new URL(window.location);
                         if (!url.searchParams.has('audio_key')) {
                             url.searchParams.set('audio_key', pendingKey);
                             window.history.pushState({}, '', url);
-                            window.location.reload();
+                            console.log('✅ Set audio key in URL');
                         }
+                        // Clear from sessionStorage since we've processed it
+                        sessionStorage.removeItem('streamlit_pending_audio_key');
                     } catch(e) {
                         console.log('Could not set URL param');
                     }
@@ -905,6 +906,30 @@ def show_testing_interface():
         </script>
         """
         components.html(audio_listener_js, height=0)
+        
+        # Also check sessionStorage for pending key (set by postMessage listener)
+        # This is a fallback if URL update didn't work
+        if not audio_key_to_use:
+            # Inject JS to check sessionStorage and put key in URL
+            check_storage_js = """
+            <script>
+                const pendingKey = sessionStorage.getItem('streamlit_pending_audio_key');
+                if (pendingKey) {
+                    try {
+                        const url = new URL(window.location);
+                        if (!url.searchParams.has('audio_key')) {
+                            url.searchParams.set('audio_key', pendingKey);
+                            window.history.pushState({}, '', url);
+                            // Trigger rerun by changing URL
+                            window.location.search = url.search;
+                        }
+                    } catch(e) {
+                        console.log('Could not update URL from sessionStorage');
+                    }
+                }
+            </script>
+            """
+            components.html(check_storage_js, height=0)
         
         # If we got a storage key, inject JavaScript to read from sessionStorage and update the input
         if audio_key_to_use and not audio_base64:
