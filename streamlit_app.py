@@ -857,46 +857,44 @@ def show_testing_interface():
                             audio_format = 'webm'
                     
                     # Call ASR API (like Flask)
-                    # Get API key - try multiple methods
+                    # Get API key - try multiple methods (same as error logs section)
                     api_key = None
                     try:
                         api_key = st.secrets.get('SARVAM_API_KEY', '')
-                    except:
+                        if not api_key or api_key == '':
+                            try:
+                                api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                            except:
+                                api_key = os.environ.get('SARVAM_API_KEY', '')
+                    except Exception as e:
                         try:
                             api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
                         except:
                             api_key = os.environ.get('SARVAM_API_KEY', '')
                     
-                    if not api_key:
-                        st.error("❌ SARVAM_API_KEY not found in secrets. Please configure it in Streamlit Cloud secrets.")
+                    # Always call ASR - let it handle the error if key is missing
+                    # This way we get the actual API error, not just "key not configured"
+                    asr_transcript = call_sarvam_asr(
+                        audio_bytes,
+                        language,
+                        api_key,  # Pass the key (or None if not found)
+                        audio_format=audio_format
+                    )
+                    
+                    if asr_transcript:
+                        # Use Flask's exact keyword matching logic
+                        matches = check_match(crop_name, asr_transcript)
+                        st.session_state[f'asr_result_{recording_key}'] = {
+                            'transcript': asr_transcript,
+                            'matches': matches
+                        }
+                    else:
+                        # ASR failed - call_sarvam_asr will have shown the actual error
                         st.session_state[f'asr_result_{recording_key}'] = {
                             'transcript': None,
                             'matches': False,
-                            'error': 'API key not configured'
+                            'error': 'ASR API returned no transcript - check error messages above'
                         }
-                    else:
-                        # Call ASR with the key
-                        asr_transcript = call_sarvam_asr(
-                            audio_bytes,
-                            language,
-                            api_key,  # Pass the key we found
-                            audio_format=audio_format
-                        )
-                        
-                        if asr_transcript:
-                            # Use Flask's exact keyword matching logic
-                            matches = check_match(crop_name, asr_transcript)
-                            st.session_state[f'asr_result_{recording_key}'] = {
-                                'transcript': asr_transcript,
-                                'matches': matches
-                            }
-                        else:
-                            # ASR failed - store error (call_sarvam_asr will show the actual error)
-                            st.session_state[f'asr_result_{recording_key}'] = {
-                                'transcript': None,
-                                'matches': False,
-                                'error': 'ASR API returned no transcript - check error messages above'
-                            }
                     
                     # Mark as processed (even if failed, so we don't retry infinitely)
                     st.session_state[f'audio_processed_{recording_key}'] = True
