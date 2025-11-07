@@ -152,7 +152,7 @@ BCP47_CODES = {
     "pa": "pa-IN"
 }
 
-def call_sarvam_asr(audio_bytes, language_code, api_key=None):
+def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'):
     """
     Call Sarvam ASR API to transcribe audio
     
@@ -194,9 +194,12 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None):
         audio_size = len(audio_bytes)
         st.info(f"🔍 DEBUG: Audio size: {audio_size} bytes ({audio_size/1024:.2f} KB)")
         
-        # Prepare request
+        # Prepare request - use correct format
+        mime_type_for_api = 'audio/wav' if audio_format == 'wav' else 'audio/webm'
+        filename = f'audio.{audio_format}'
+        
         files = {
-            'file': ('audio.wav', audio_bytes, 'audio/wav')
+            'file': (filename, audio_bytes, mime_type_for_api)
         }
         
         data = {
@@ -777,11 +780,85 @@ def show_testing_interface():
                 # Extract base64 part after comma
                 if ',' in audio_base64:
                     base64_data = audio_base64.split(',')[1]
-                    st.info(f"🔍 DEBUG: Extracted base64 data length: {len(base64_data)} chars")
+                    # Detect MIME type from data URL
+                    mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
+                    st.info(f"🔍 DEBUG: Detected MIME type: {mime_type}")
                 else:
                     base64_data = audio_base64
+                    mime_type = 'audio/webm'
+                
                 audio_bytes = base64.b64decode(base64_data)
                 st.info(f"🔍 DEBUG: Decoded audio bytes: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
+                
+                # Convert webm to wav if needed (API expects wav format)
+                # Store original format for API call
+                audio_format = 'wav'  # Default
+                if 'webm' in mime_type.lower():
+                    st.info("🔍 DEBUG: Audio is webm format, attempting conversion to wav...")
+                    try:
+                        # Try using pydub if available (requires ffmpeg)
+                        from pydub import AudioSegment
+                        import io
+                        
+                        # Load webm audio
+                        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+                        # Convert to wav: 16kHz, mono
+                        audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                        
+                        # Export to wav bytes
+                        wav_buffer = io.BytesIO()
+                        audio_segment.export(wav_buffer, format="wav")
+                        audio_bytes = wav_buffer.getvalue()
+                        audio_format = 'wav'
+                        st.info(f"✅ DEBUG: Converted to WAV using pydub: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
+                    except ImportError:
+                        st.warning("⚠️ DEBUG: pydub not available, trying ffmpeg directly...")
+                        try:
+                            import tempfile
+                            import subprocess
+                            
+                            # Write webm to temp file
+                            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_webm:
+                                temp_webm.write(audio_bytes)
+                                temp_webm_path = temp_webm.name
+                            
+                            # Convert to wav using ffmpeg
+                            temp_wav_path = temp_webm_path.replace('.webm', '.wav')
+                            convert_cmd = [
+                                'ffmpeg', '-i', temp_webm_path,
+                                '-ar', '16000',  # Sample rate 16kHz
+                                '-ac', '1',     # Mono channel
+                                '-f', 'wav',    # WAV format
+                                '-y',           # Overwrite output
+                                temp_wav_path
+                            ]
+                            
+                            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=10)
+                            
+                            if result.returncode == 0:
+                                # Read converted wav file
+                                with open(temp_wav_path, 'rb') as f:
+                                    audio_bytes = f.read()
+                                audio_format = 'wav'
+                                st.info(f"✅ DEBUG: Converted to WAV using ffmpeg: {len(audio_bytes)} bytes ({len(audio_bytes)/1024:.2f} KB)")
+                                
+                                # Clean up temp files
+                                import os
+                                try:
+                                    os.unlink(temp_webm_path)
+                                    os.unlink(temp_wav_path)
+                                except:
+                                    pass
+                            else:
+                                st.warning(f"⚠️ DEBUG: FFmpeg conversion failed. Error: {result.stderr[:200]}")
+                                st.warning("⚠️ DEBUG: Will try sending as webm format to API")
+                        except Exception as conv_error:
+                            st.warning(f"⚠️ DEBUG: Audio conversion error: {conv_error}. Will try sending as webm.")
+                    except Exception as conv_error:
+                        st.warning(f"⚠️ DEBUG: pydub conversion failed: {conv_error}. Will try sending as webm.")
+                
+                # Format is stored in audio_format variable, will be passed to API call
+                
                 st.session_state.recorded_audio = audio_bytes
                 st.success("✅ DEBUG: Audio successfully decoded and stored!")
                 
@@ -791,7 +868,8 @@ def show_testing_interface():
                         asr_transcript = call_sarvam_asr(
                             audio_bytes,
                             language,
-                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                            audio_format=audio_format
                         )
                         
                         if asr_transcript:
