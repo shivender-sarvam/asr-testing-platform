@@ -304,8 +304,8 @@ def show_name_input():
             st.error("Please enter your name.")
 
 def show_language_selection():
-    """Step 2: Language Selection"""
-    st.header("🌍 Step 2: Select Language")
+    """Step 1: Language Selection"""
+    st.header("🌍 Step 1: Select Language")
     st.markdown("Choose the language for ASR testing.")
     
     languages = {
@@ -336,8 +336,8 @@ def show_language_selection():
         st.rerun()
 
 def show_csv_upload():
-    """Step 3: CSV Upload"""
-    st.header("📁 Step 3: Upload CSV or Start Testing")
+    """Step 2: CSV Upload"""
+    st.header("📁 Step 2: Upload CSV or Start Testing")
     
     st.markdown("Upload a CSV file with crop data in the format: `serial_number,crop_code,crop_name,language,project`")
     st.info("💡 **Tip:** Column names can be flexible (e.g., 'crop name', 'Crop Name', 'crop_name' all work)")
