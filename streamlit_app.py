@@ -825,110 +825,71 @@ def show_testing_interface():
         if audio_base64:
             st.session_state[audio_base64_key] = audio_base64
         
-        # Auto-process when audio is received - IMMEDIATE PROCESSING (like Flask)
+        # Auto-process when audio is received - IMMEDIATE PROCESSING (EXACT FLASK WORKFLOW)
+        # Process ASR immediately when audio is detected (no separate submit button needed)
         if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            if not st.session_state.get(f'audio_stored_{recording_key}', False):
-                # Audio detected! Process it immediately (no waiting)
-                try:
-                    # Extract base64 part after comma
-                    if ',' in audio_base64:
-                        base64_data = audio_base64.split(',')[1]
-                        mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
-                    else:
-                        base64_data = audio_base64
-                        mime_type = 'audio/webm'
-                    
-                    audio_bytes = base64.b64decode(base64_data)
-                    
-                    # Convert webm to wav if needed
-                    audio_format = 'wav'
-                    if 'webm' in mime_type.lower():
-                        try:
-                            from pydub import AudioSegment
-                            import io
-                            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
-                            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-                            wav_buffer = io.BytesIO()
-                            audio_segment.export(wav_buffer, format="wav")
-                            audio_bytes = wav_buffer.getvalue()
-                            audio_format = 'wav'
-                        except Exception as e:
-                            st.warning(f"Could not convert webm to wav: {e}. Using original format.")
-                            audio_format = 'webm'
-                    
-                    # Store audio for later processing
-                    st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes
-                    st.session_state[f'audio_format_{recording_key}'] = audio_format
-                    st.session_state[f'audio_stored_{recording_key}'] = True
-                    st.success("✅ Audio received and stored!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error processing audio: {e}")
-        
-        # Show playback if audio is stored (but not yet submitted)
-        audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
-        audio_submitted = st.session_state.get(audio_submitted_key, False)
-        
-        # DEBUG: Show state - ALWAYS VISIBLE
-        st.error("🔍🔍🔍 STATE DEBUG 🔍🔍🔍")
-        st.write(f"**audio_stored:** {audio_stored}")
-        st.write(f"**audio_submitted:** {audio_submitted}")
-        st.write(f"**recording_key:** {recording_key}")
-        st.write(f"**All session state keys containing 'recording':**")
-        recording_keys = [k for k in st.session_state.keys() if 'recording' in k.lower()]
-        st.write(recording_keys)
-        
-        if audio_stored and not audio_submitted:
-            audio_bytes = st.session_state.get(f'audio_bytes_{recording_key}')
-            if audio_bytes:
-                st.success("✅ Recording completed! Listen to your recording:")
-                st.audio(audio_bytes, format="audio/webm")
-                
-                # Submit button - matches Flask version (ONLY show if not submitted yet)
-                st.markdown("---")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📤 Submit Recording", type="primary", key=f"submit_{recording_key}", use_container_width=True):
-                        # Process ASR when submit is clicked
-                        with st.spinner("🔄 Processing audio with ASR..."):
-                            audio_format = st.session_state.get(f'audio_format_{recording_key}', 'wav')
-                            asr_transcript = call_sarvam_asr(
-                                audio_bytes,
-                                language,
-                                st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                                audio_format=audio_format
-                            )
-                            
-                            if asr_transcript:
-                                matches = check_match(crop_name, asr_transcript)
-                                st.session_state[f'asr_result_{recording_key}'] = {
-                                    'transcript': asr_transcript,
-                                    'matches': matches
-                                }
-                            else:
-                                st.session_state[f'asr_result_{recording_key}'] = {
-                                    'transcript': None,
-                                    'matches': False
-                                }
-                            
-                            st.session_state[audio_submitted_key] = True
-                            st.rerun()
-                
-                with col2:
-                    if st.button("🔄 Record Again", key=f"rerecord_{recording_key}", use_container_width=True):
-                        # Clear all state for this recording
-                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
-                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
-                                   audio_submitted_key]:
-                            if key in st.session_state:
-                                del st.session_state[key]
+            if not st.session_state.get(f'audio_processed_{recording_key}', False):
+                # Audio detected! Process it immediately (EXACT FLASK WORKFLOW)
+                with st.spinner("🔄 Processing audio with ASR..."):
+                    try:
+                        # Extract base64 part after comma
+                        if ',' in audio_base64:
+                            base64_data = audio_base64.split(',')[1]
+                            mime_type = audio_base64.split(';')[0].split(':')[1] if ':' in audio_base64.split(';')[0] else 'audio/webm'
+                        else:
+                            base64_data = audio_base64
+                            mime_type = 'audio/webm'
+                        
+                        audio_bytes = base64.b64decode(base64_data)
+                        
+                        # Convert webm to wav if needed
+                        audio_format = 'wav'
+                        if 'webm' in mime_type.lower():
+                            try:
+                                from pydub import AudioSegment
+                                import io
+                                audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+                                audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                                wav_buffer = io.BytesIO()
+                                audio_segment.export(wav_buffer, format="wav")
+                                audio_bytes = wav_buffer.getvalue()
+                                audio_format = 'wav'
+                            except Exception as e:
+                                st.warning(f"Could not convert webm to wav: {e}. Using original format.")
+                                audio_format = 'webm'
+                        
+                        # Call ASR API immediately (like Flask)
+                        asr_transcript = call_sarvam_asr(
+                            audio_bytes,
+                            language,
+                            st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
+                            audio_format=audio_format
+                        )
+                        
+                        if asr_transcript:
+                            matches = check_match(crop_name, asr_transcript)
+                            st.session_state[f'asr_result_{recording_key}'] = {
+                                'transcript': asr_transcript,
+                                'matches': matches
+                            }
+                        else:
+                            st.session_state[f'asr_result_{recording_key}'] = {
+                                'transcript': None,
+                                'matches': False
+                            }
+                        
+                        # Mark as processed
+                        st.session_state[f'audio_processed_{recording_key}'] = True
+                        st.session_state[audio_submitted_key] = True
                         st.rerun()
+                    except Exception as e:
+                        st.error(f"Error processing audio: {e}")
         
-        # Show results immediately after submit (matches Flask) - OUTSIDE the audio_stored block
+        # Show results immediately after processing (EXACT FLASK WORKFLOW)
         if st.session_state.get(audio_submitted_key, False):
             result = st.session_state.get(f'asr_result_{recording_key}', {})
             st.markdown("---")
-            st.markdown("### ✅ Recording Submitted!")
+            st.markdown("### ✅ Results")
             
             if result.get('transcript'):
                 st.markdown(f"**Transcription:** {result['transcript']}")
@@ -958,51 +919,39 @@ def show_testing_interface():
             else:
                 st.error("❌ ASR processing failed. Please check your API key.")
             
-            # Show navigation based on attempt number (like Flask)
-            st.markdown("---")
-            
-            # If more attempts remaining, show "Record Again" to continue with same crop
-            if current_attempt_num < max_attempts:
-                st.markdown(f"### Continue Testing ({current_attempt_num}/{max_attempts} attempts completed)")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🔄 Record Again", type="primary", key=f"next_attempt_{recording_key}", use_container_width=True):
-                        # Move to next attempt for same crop
-                        st.session_state.current_attempt[crop_index] = current_attempt_num + 1
-                        # Clear this attempt's state
-                        result_saved_key = f'result_saved_{recording_key}'
-                        for key in [f'audio_bytes_{recording_key}', f'audio_format_{recording_key}', 
-                                   f'audio_stored_{recording_key}', f'asr_result_{recording_key}', 
-                                   audio_submitted_key, result_saved_key]:
-                            if key in st.session_state:
+                # AUTO-ADVANCE like Flask (after showing results)
+                import time
+                if current_attempt_num < max_attempts:
+                    # More attempts remaining - auto-advance to next attempt after 8 seconds
+                    st.info(f"⏳ Moving to next attempt ({current_attempt_num + 1}/{max_attempts}) in 8 seconds...")
+                    time.sleep(8)
+                    # Move to next attempt
+                    st.session_state.current_attempt[crop_index] = current_attempt_num + 1
+                    # Clear this attempt's state
+                    result_saved_key = f'result_saved_{recording_key}'
+                    for key in [f'audio_base64_{recording_key}', f'audio_processed_{recording_key}', 
+                               f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+                else:
+                    # All attempts done - auto-advance to next crop after 10 seconds
+                    st.info("⏳ All 5 attempts completed. Moving to next crop in 10 seconds...")
+                    time.sleep(10)
+                    # Move to next crop
+                    if crop_index + 1 < len(st.session_state.test_data):
+                        st.session_state.current_test_index = crop_index + 1
+                        # Reset attempt for new crop
+                        if crop_index + 1 not in st.session_state.current_attempt:
+                            st.session_state.current_attempt[crop_index + 1] = 1
+                        # Clear all state
+                        for key in list(st.session_state.keys()):
+                            if 'recording_' in key or 'audio_' in key:
                                 del st.session_state[key]
                         st.rerun()
-                with col2:
-                    if st.button("➡️ Next Crop", key=f"skip_to_next_crop_{recording_key}", use_container_width=True):
-                        # Skip remaining attempts and move to next crop
-                        st.session_state.current_test_index += 1
-                        # Clear all state for this crop
-                        for key in list(st.session_state.keys()):
-                            if f'recording_{crop_index}' in key:
-                                del st.session_state[key]
-                        if crop_index in st.session_state.current_attempt:
-                            del st.session_state.current_attempt[crop_index]
-                        st.rerun()
-            else:
-                # All 5 attempts done, move to next crop
-                st.markdown("### ✅ All 5 attempts completed!")
-                st.info(f"You've completed all {max_attempts} attempts for {crop_name}. Moving to next crop...")
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    if st.button("➡️ Next Crop", type="primary", key=f"next_crop_{recording_key}", use_container_width=True):
-                        # Move to next crop
-                        st.session_state.current_test_index += 1
-                        # Clear all state for this crop
-                        for key in list(st.session_state.keys()):
-                            if f'recording_{crop_index}' in key:
-                                del st.session_state[key]
-                        if crop_index in st.session_state.current_attempt:
-                            del st.session_state.current_attempt[crop_index]
+                    else:
+                        # All crops done - go to results
+                        st.session_state.show_results = True
                         st.rerun()
                 with col2:
                     if st.button("🔄 Review Results", key=f"review_{recording_key}", use_container_width=True):
