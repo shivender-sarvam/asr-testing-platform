@@ -242,12 +242,19 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     # Show what fields ARE in the response (IMMEDIATELY VISIBLE)
                     available_fields = list(result.keys()) if isinstance(result, dict) else 'Not a dict'
                     
-                    # Show full response IMMEDIATELY (not hidden)
+                    # Show full response IMMEDIATELY (not hidden) - SUPER PROMINENT
                     st.error(f"❌ API returned 200 but no transcript in response")
+                    st.markdown("---")
                     st.markdown("### 🔍 **DEBUG INFO (IMMEDIATELY VISIBLE)**")
+                    st.markdown("**This info will also appear in Error Logs section below**")
                     
-                    with st.expander("📋 **Full API Response**", expanded=True):
-                        st.json(result)
+                    # Show full response in multiple formats
+                    st.write("**📋 Full API Response (JSON):**")
+                    st.json(result)
+                    
+                    # Also show as code block
+                    st.write("**📋 Full API Response (Formatted):**")
+                    st.code(json.dumps(result, indent=2), language='json')
                     
                     st.warning(f"📋 **Available fields in response:** `{available_fields}`")
                     
@@ -1196,22 +1203,40 @@ def show_testing_interface():
                     audio_format_used = st.session_state.get(f'_audio_format_{recording_key}', 'webm')
                     st.code(f"Headers: api-subscription-key: {'Set' if api_key_check != 'NOT FOUND' else 'Missing'}\nFiles: audio.{audio_format_used}\nData: model={MODEL_NAME}, language_code={BCP47_CODES.get(language.lower(), 'hi-IN')}", language='text')
                     
-                    # Show actual API response if available
+                    # Show actual API response if available - MAKE IT SUPER VISIBLE
+                    st.markdown("---")
+                    st.markdown("### 🔍 **ACTUAL API RESPONSE (CRITICAL DEBUG INFO)**")
+                    
                     if st.session_state.get('_last_api_response'):
-                        st.write("**Actual API Response:**")
                         api_resp = st.session_state['_last_api_response']
                         import json
                         response_data = api_resp.get('response', api_resp.get('raw_response', 'N/A'))
                         
-                        # Format response nicely
+                        # Show status and fields first
+                        st.write(f"**Status Code:** `{api_resp.get('status_code', 'N/A')}`")
+                        st.write(f"**Error:** `{api_resp.get('error', 'N/A')}`")
+                        available_fields = api_resp.get('available_fields', 'N/A')
+                        st.write(f"**Available Fields:** `{available_fields}`")
+                        
+                        # Show full response in expandable JSON viewer (ALWAYS EXPANDED)
+                        st.write("**Full Response JSON:**")
+                        if isinstance(response_data, dict):
+                            st.json(response_data)
+                        else:
+                            st.code(str(response_data), language='json')
+                        
+                        # Also show as formatted text for easy reading
+                        st.write("**Formatted Response:**")
                         if isinstance(response_data, dict):
                             response_str = json.dumps(response_data, indent=2)
                         elif isinstance(response_data, str):
                             response_str = response_data
                         else:
                             response_str = str(response_data)
-                        
-                        st.code(f"Status Code: {api_resp.get('status_code', 'N/A')}\nError: {api_resp.get('error', 'N/A')}\nAvailable Fields: {api_resp.get('available_fields', 'N/A')}\n\nFull Response:\n{response_str}", language='json')
+                        st.code(response_str, language='json')
+                    else:
+                        st.error("❌ No API response stored in session state. This shouldn't happen!")
+                        st.info("💡 The API call might have failed before storing the response.")
                 
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
