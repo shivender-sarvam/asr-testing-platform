@@ -234,18 +234,25 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                 transcript = result.get('transcript', result.get('text', '')).strip()
                 if transcript:
                     st.success(f"✅ ASR Success: '{transcript}'")
-                return transcript
+                    return transcript
+                else:
+                    # API returned 200 but no transcript
+                    st.error(f"❌ API returned 200 but no transcript in response")
+                    st.code(f"Full response: {result}", language='json')
+                    return None
             except Exception as json_error:
                 st.error(f"❌ Failed to parse API response: {json_error}")
-                st.code(f"Response: {response.text[:500]}")
+                st.code(f"Raw response: {response.text[:1000]}", language='text')
                 return None
         else:
-            st.error(f"❌ API error: {response.status_code}")
+            st.error(f"❌ API error: HTTP {response.status_code}")
             try:
                 error_body = response.json()
                 st.error(f"Error details: {error_body}")
+                st.code(f"Full error response: {error_body}", language='json')
             except:
-                st.error(f"Error text: {response.text[:500]}")
+                st.error(f"Error text: {response.text[:1000]}")
+                st.code(f"Raw error response: {response.text[:1000]}", language='text')
             return None
             
     except requests.exceptions.Timeout:
@@ -1070,6 +1077,10 @@ def show_testing_interface():
                         st.write("**Audio File Info:**")
                         audio_size = len(audio_bytes) if 'audio_bytes' in locals() else 'N/A'
                         st.code(f"Name: {uploaded_audio.name}\nSize: {audio_size} bytes\nType: {uploaded_audio.type}", language='text')
+                    
+                    # Show what was actually sent to API
+                    st.write("**Request Details:**")
+                    st.code(f"Headers: api-subscription-key: {'Set' if api_key_check != 'NOT FOUND' else 'Missing'}\nFiles: audio.{audio_format if 'audio_format' in locals() else 'webm'}\nData: model={MODEL_NAME}, language_code={BCP47_CODES.get(language.lower(), 'hi-IN')}", language='text')
                 
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
