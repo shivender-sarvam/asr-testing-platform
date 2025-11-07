@@ -884,7 +884,16 @@ def show_testing_interface():
         
         # Also check session state
         audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64 = audio_base64_from_url or st.session_state.get(audio_base64_key, "")
+        
+        # Decode URL-encoded audio if from URL
+        if audio_base64_from_url:
+            try:
+                from urllib.parse import unquote
+                audio_base64 = unquote(audio_base64_from_url)
+            except:
+                audio_base64 = audio_base64_from_url
+        else:
+            audio_base64 = st.session_state.get(audio_base64_key, "")
         
         # Store in session state
         if audio_base64:
