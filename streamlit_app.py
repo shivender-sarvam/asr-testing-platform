@@ -701,7 +701,8 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - matches Flask version
+                    // Submit button handler - SIMPLE APPROACH: Download file, then user uploads
+                    // This is the most reliable way to get audio from JS to Streamlit
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -709,81 +710,36 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Processing...';
+                        submitBtn.textContent = '⏳ Preparing...';
                         
-                        // Convert to base64
-                        const reader = new FileReader();
-                        reader.onloadend = function() {{
-                            const base64Audio = reader.result;
-                            console.log('Converting audio to base64 for Streamlit...');
+                        try {{
+                            // Create download link
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            const a = document.createElement('a');
+                            a.href = audioUrl;
+                            a.download = 'recording_' + key + '.webm';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(audioUrl);
                             
-                            // Store in localStorage
-                            try {{
-                                localStorage.setItem('streamlit_audio_' + key, base64Audio);
-                                console.log('✅ Audio stored in localStorage');
-                            }} catch(e) {{
-                                console.log('localStorage not available');
-                            }}
-                            
-                            // Send audio to Streamlit via URL query parameter
-                            // This is the most reliable method - no input finding needed
-                            console.log('📤 Sending audio to Streamlit via URL...');
-                            
-                            // Show success message
-                            submitBtn.textContent = '✅ Submitted! Processing...';
+                            // Show message
+                            submitBtn.textContent = '✅ Downloaded! Please upload below';
                             submitBtn.style.background = '#28a745';
-                            submitBtn.disabled = true;
                             
-                            try {{
-                                // Store in sessionStorage with a unique key
-                                const storageKey = 'streamlit_audio_' + key + '_' + Date.now();
-                                sessionStorage.setItem(storageKey, base64Audio);
-                                console.log('✅ Audio stored in sessionStorage:', storageKey);
-                                
-                                // Try to update parent URL, but if that fails, use postMessage
-                                try {{
-                                    // Try to navigate parent (works if same origin)
-                                    const currentUrl = window.parent.location.href;
-                                    const url = new URL(currentUrl);
-                                    url.searchParams.set('audio_key', storageKey);
-                                    window.parent.location.href = url.toString();
-                                    console.log('🔄 Navigating parent to URL with audio key...');
-                                }} catch(navError) {{
-                                    // If navigation fails (cross-origin), use postMessage
-                                    console.log('Navigation blocked, using postMessage instead');
-                                    try {{
-                                        window.parent.postMessage({{
-                                            type: 'streamlit_audio_key',
-                                            key: storageKey
-                                        }}, '*');
-                                        console.log('📤 Sent audio key via postMessage');
-                                        
-                                        // Also store in a way Streamlit can access
-                                        // Set it in the current window's location (if possible)
-                                        try {{
-                                            const currentUrl = window.location.href;
-                                            const url = new URL(currentUrl);
-                                            url.searchParams.set('audio_key', storageKey);
-                                            window.location.href = url.toString();
-                                        }} catch(e2) {{
-                                            console.log('Could not update iframe URL either');
-                                        }}
-                                    }} catch(msgError) {{
-                                        console.error('postMessage also failed:', msgError);
-                                        // Last resort: store key in a global variable and show message
-                                        window.streamlitAudioKey = storageKey;
-                                        alert('Audio ready! The app will process it automatically.');
-                                    }}
-                                }}
-                            }} catch(e) {{
-                                console.error('Error:', e);
-                                alert('Error sending audio: ' + e.message);
-                                submitBtn.disabled = false;
-                                submitBtn.textContent = '📤 Submit Recording';
-                                submitBtn.style.background = '#007bff';
-                            }}
-                        }};
-                        reader.readAsDataURL(audioBlob);
+                            // Scroll to uploader
+                            setTimeout(() => {{
+                                window.parent.postMessage({{
+                                    type: 'scroll_to_uploader'
+                                }}, '*');
+                            }}, 500);
+                        }} catch(e) {{
+                            console.error('Error:', e);
+                            alert('Error preparing audio: ' + e.message);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '📤 Submit Recording';
+                            submitBtn.style.background = '#007bff';
+                        }}
                     }});
                     
                     // Record again button
