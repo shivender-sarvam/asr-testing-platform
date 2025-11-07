@@ -971,6 +971,7 @@ def show_testing_interface():
                             mime_type = 'audio/webm'
                         
                         audio_bytes = base64.b64decode(base64_data)
+                        st.session_state[f'audio_bytes_{recording_key}'] = audio_bytes  # Store for processing
                         
                         # Convert webm to wav if needed
                         audio_format = 'wav'
@@ -1014,6 +1015,17 @@ def show_testing_interface():
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error processing audio: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+        
+        # Manual trigger button if audio is present but not processed
+        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
+            if not st.session_state.get(f'audio_processed_{recording_key}', False):
+                st.warning("⚠️ Audio detected but not yet processed. Click to process:")
+                if st.button("🔄 Process Audio Now", key=f"manual_process_{recording_key}", type="primary"):
+                    # Force processing
+                    del st.session_state[f'audio_processed_{recording_key}']
+                    st.rerun()
         
         # DEBUG: Show what's happening
         with st.expander("🔍 Debug Info", expanded=False):
