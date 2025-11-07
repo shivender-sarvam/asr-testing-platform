@@ -10,6 +10,14 @@ import os
 from urllib.parse import urlencode, parse_qs
 import streamlit.components.v1 as components
 
+# Import Azure service for saving results
+try:
+    from azure_service import upload_single_test_result, upload_asr_test_results
+    AZURE_AVAILABLE = True
+except ImportError:
+    AZURE_AVAILABLE = False
+    st.warning("⚠️ Azure service not available - results will only be saved in session")
+
 # Page config
 st.set_page_config(
     page_title="ASR Testing Platform - Sarvam",
