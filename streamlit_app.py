@@ -803,33 +803,32 @@ def show_testing_interface():
                         reader.readAsDataURL(audioBlob);
                     }});
                     
-                    // Record again button - increment attempt and trigger rerun
+                    // Record again button - always increment attempt if results are shown
                     recordAgainBtn.addEventListener('click', function() {{
-                        // If result was already submitted, increment attempt via URL
-                        const submitted = submitBtn.textContent.includes('Submitted') || submitBtn.style.background.includes('28a745');
-                        if (submitted) {{
-                            // Increment attempt by updating URL
-                            const currentUrl = window.location.href;
-                            const url = new URL(currentUrl);
-                            url.searchParams.set('increment_attempt', 'true');
-                            
-                            // Update URL to trigger Streamlit rerun with incremented attempt
-                            if (window.parent && window.parent !== window) {{
-                                try {{
-                                    window.parent.location.href = url.toString();
-                                }} catch(e) {{
-                                    window.location.href = url.toString();
-                                }}
-                            }} else {{
+                        // Check if results section exists (means result was submitted)
+                        const resultsSection = document.querySelector('[data-testid*="stMarkdownContainer"]');
+                        const hasResults = resultsSection && resultsSection.textContent.includes('Results');
+                        
+                        // Always try to increment attempt (safer approach)
+                        const currentUrl = window.location.href;
+                        const url = new URL(currentUrl);
+                        url.searchParams.set('increment_attempt', 'true');
+                        url.searchParams.set('_t', Date.now()); // Force reload
+                        
+                        // Update URL to trigger Streamlit rerun with incremented attempt
+                        if (window.parent && window.parent !== window) {{
+                            try {{
+                                window.parent.location.href = url.toString();
+                            }} catch(e) {{
+                                // Cross-origin - use postMessage
+                                window.parent.postMessage({{
+                                    type: 'streamlit:increment_attempt',
+                                    key: key
+                                }}, '*');
                                 window.location.href = url.toString();
                             }}
                         }} else {{
-                            // Just reset UI if not submitted yet
-                            playbackDiv.style.display = 'none';
-                            audioBlob = null;
-                            audioChunks = [];
-                            startBtn.disabled = false;
-                            stopBtn.disabled = true;
+                            window.location.href = url.toString();
                         }}
                     }});
                     
