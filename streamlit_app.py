@@ -847,34 +847,53 @@ def show_testing_interface():
                             audio_format = 'webm'
                     
                     # Call ASR API (like Flask)
-                    asr_transcript = call_sarvam_asr(
-                        audio_bytes,
-                        language,
-                        st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None)),
-                        audio_format=audio_format
-                    )
-                    
-                    if asr_transcript:
-                        # Use Flask's exact keyword matching logic
-                        matches = check_match(crop_name, asr_transcript)
-                        st.session_state[f'asr_result_{recording_key}'] = {
-                            'transcript': asr_transcript,
-                            'matches': matches
-                        }
-                    else:
+                    api_key = st.secrets.get('SARVAM_API_KEY', os.environ.get('SARVAM_API_KEY', None))
+                    if not api_key:
+                        st.error("❌ SARVAM_API_KEY not found in secrets. Please configure it in Streamlit Cloud secrets.")
                         st.session_state[f'asr_result_{recording_key}'] = {
                             'transcript': None,
-                            'matches': False
+                            'matches': False,
+                            'error': 'API key not configured'
                         }
+                    else:
+                        asr_transcript = call_sarvam_asr(
+                            audio_bytes,
+                            language,
+                            api_key,
+                            audio_format=audio_format
+                        )
+                        
+                        if asr_transcript:
+                            # Use Flask's exact keyword matching logic
+                            matches = check_match(crop_name, asr_transcript)
+                            st.session_state[f'asr_result_{recording_key}'] = {
+                                'transcript': asr_transcript,
+                                'matches': matches
+                            }
+                        else:
+                            # ASR failed - store error
+                            st.session_state[f'asr_result_{recording_key}'] = {
+                                'transcript': None,
+                                'matches': False,
+                                'error': 'ASR API returned no transcript'
+                            }
                     
-                    # Mark as processed
+                    # Mark as processed (even if failed, so we don't retry infinitely)
                     st.session_state[f'audio_processed_{recording_key}'] = True
                     st.session_state[audio_submitted_key] = True
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error processing audio: {e}")
+                    st.error(f"❌ Error processing audio: {e}")
                     import traceback
                     st.code(traceback.format_exc())
+                    # Store error in result
+                    st.session_state[f'asr_result_{recording_key}'] = {
+                        'transcript': None,
+                        'matches': False,
+                        'error': str(e)
+                    }
+                    st.session_state[f'audio_processed_{recording_key}'] = True
+                    st.session_state[audio_submitted_key] = True
         
         # DEBUG: Show what's happening
         with st.expander("🔍 Debug Info", expanded=False):
@@ -989,7 +1008,10 @@ def show_testing_interface():
                             st.session_state.show_results = True
                             st.rerun()
             else:
-                st.error("❌ ASR processing failed. Please check your API key or try recording again.")
+                # Show specific error if available
+                error_msg = result.get('error', 'Unknown error')
+                st.error(f"❌ ASR processing failed: {error_msg}")
+                st.info("💡 **Troubleshooting:**\n- Check if SARVAM_API_KEY is set in Streamlit Cloud secrets\n- Verify the API endpoint is accessible\n- Check browser console for detailed errors")
                 if st.button("🔄 Try Again", key=f"retry_{recording_key}"):
                     # Clear state to allow retry
                     keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
