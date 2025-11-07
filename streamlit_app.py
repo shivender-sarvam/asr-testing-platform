@@ -664,22 +664,23 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # File uploader for audio (optional - for playback and ASR processing)
+        # File uploader for audio (REQUIRED for ASR processing)
         st.markdown("---")
-        st.markdown("**📤 Optional: Upload your recorded audio file**")
-        st.info("💡 **Tip:** After recording above, download the file and upload it here to listen back. You can also complete the test without uploading.")
+        st.markdown("### 📤 Upload Your Recorded Audio (Required for ASR)")
+        st.warning("⚠️ **Important:** After recording above, you MUST download the audio file and upload it here for ASR processing and accuracy calculation!")
+        st.info("💡 **Steps:** 1) Record audio using buttons above → 2) Click 'Download Recording' → 3) Upload the downloaded file here → 4) Click 'Save & Next' or 'Finish Testing'")
         
         uploaded_audio = st.file_uploader(
-            "Choose Audio File (Optional)",
+            "📁 Upload Audio File (Required)",
             type=['wav', 'mp3', 'webm', 'ogg', 'm4a'],
             key=f"audio_upload_{recording_key}",
-            help="Record audio using the buttons above, then download and upload the file here for playback"
+            help="Record audio using the buttons above, then download and upload the file here for ASR processing"
         )
         
         # Store and display uploaded audio
         if uploaded_audio:
             st.session_state.recorded_audio = uploaded_audio.read()
-            st.success("✅ Audio file uploaded!")
+            st.success("✅ Audio file uploaded! Ready for ASR processing.")
             
             # Display audio player
             st.markdown("### 🔊 Listen to Your Recording")
@@ -689,6 +690,8 @@ def show_testing_interface():
             if st.button("🔄 Record Again", key=f"rerecord_{recording_key}"):
                 st.session_state.recorded_audio = None
                 st.rerun()
+        else:
+            st.error("❌ **No audio uploaded!** Please record and upload audio to get ASR results and accuracy scores.")
         
         # Navigation
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
@@ -726,9 +729,10 @@ def show_testing_interface():
                         asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
                     else:
                         # Fallback if API fails
-                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
+                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed - check API key)"
                         accuracy = 0.0
                 else:
+                    st.warning("⚠️ No audio uploaded! Accuracy will be 0%. Please upload audio for ASR processing.")
                     asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
                     accuracy = 0.0
                 
@@ -772,9 +776,10 @@ def show_testing_interface():
                         asr_result = f"{asr_transcript} (accuracy: {accuracy:.1f}%)"
                     else:
                         # Fallback if API fails
-                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed)"
+                        asr_result = f"Recorded audio for {crop_name} (ASR processing failed - check API key)"
                         accuracy = 0.0
                 else:
+                    st.warning("⚠️ No audio uploaded! Accuracy will be 0%. Please upload audio for ASR processing.")
                     asr_result = f"Recorded audio for {crop_name} (audio recorded but not uploaded)"
                     accuracy = 0.0
                 
