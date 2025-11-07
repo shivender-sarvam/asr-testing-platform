@@ -898,19 +898,16 @@ def show_testing_interface():
                 except Exception as e:
                     st.error(f"Error storing audio: {e}")
         
-        # Auto-check button - checks if audio was submitted and triggers processing
-        # This button auto-clicks if audio_base64 has data but isn't processed yet
-        check_audio_key = f"check_audio_{recording_key}"
-        if audio_base64 and (audio_base64.startswith('data:audio') or audio_base64.startswith('data:application')):
-            if not st.session_state.get(f'audio_stored_{recording_key}', False):
-                # Auto-process - no button needed, just process it
-                pass  # Processing happens in the if block above
-            else:
-                # Already processed, show status
-                st.info("✅ Audio already processed!")
-        else:
-            # No audio yet, show waiting message
-            pass
+        # Add a button to check for audio (in case JavaScript set it but Streamlit didn't detect)
+        # This allows user to manually trigger processing if auto-detection fails
+        if not st.session_state.get(f'audio_stored_{recording_key}', False):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.info("💡 After clicking 'Submit Recording' above, click the button on the right to process the audio.")
+            with col2:
+                if st.button("🔄 Process Audio", key=f"process_{recording_key}", type="primary"):
+                    # Force rerun to check for audio_base64
+                    st.rerun()
         
         # Show playback if audio is stored (but not yet submitted)
         audio_stored = st.session_state.get(f'audio_stored_{recording_key}', False)
