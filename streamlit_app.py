@@ -748,41 +748,60 @@ def show_language_selection():
         st.rerun()
 
 def show_csv_upload():
-    """Step 2: CSV Upload"""
+    """Step 2: CSV Upload - Matches Flask app behavior (simple first column)"""
     st.header("📁 Step 2: Upload CSV or Start Testing")
     
-    st.markdown("Upload a CSV file with crop data in the format: `serial_number,crop_code,crop_name,language,project`")
-    st.info("💡 **Tip:** Column names can be flexible (e.g., 'crop name', 'Crop Name', 'crop_name' all work)")
+    st.markdown("Upload a CSV file with crop names. **Simple format:** Just put crop names in the first column (one per row).")
+    st.info("💡 **Tip:** The Flask version just reads the first column - no specific format needed! You can have other columns too, we'll just use the first one.")
     
     uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
     
     if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
+            # Read CSV - match Flask behavior: just read first column
+            import csv
+            import io
             
-            # Normalize column names (handle variations)
-            df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('-', '_')
+            # Read as text first (like Flask does)
+            content = uploaded_file.read().decode('utf-8')
+            csvfile = io.StringIO(content)
+            reader = csv.reader(csvfile)
             
-            # Filter by selected language if language column exists
-            if 'language' in df.columns:
-                df = df[df['language'].str.lower() == st.session_state.selected_language.lower()]
-                if df.empty:
-                    st.warning(f"No crops found for language: {st.session_state.selected_language}")
+            crop_names = []
+            for row in reader:
+                if row and row[0].strip():  # Skip empty rows, get first column
+                    crop_names.append(row[0].strip())
+            
+            if crop_names:
+                st.success(f"✅ Found {len(crop_names)} crop names!")
+                
+                # Show preview
+                preview_df = pd.DataFrame({
+                    'Crop Name': crop_names[:10]  # Show first 10
+                })
+                if len(crop_names) > 10:
+                    st.dataframe(preview_df)
+                    st.caption(f"... and {len(crop_names) - 10} more crops")
                 else:
-                    st.success(f"Found {len(df)} crops for {st.session_state.selected_language}!")
-            else:
-                st.success(f"CSV loaded successfully! Found {len(df)} crops.")
-            
-            st.dataframe(df.head())
-            
-            if st.button("Start Testing", type="primary"):
-                if not df.empty:
-                    st.session_state.test_data = df.to_dict('records')
+                    st.dataframe(preview_df)
+                
+                if st.button("Start Testing", type="primary"):
+                    # Convert to test_data format (matching what the testing interface expects)
+                    test_data = []
+                    for idx, crop_name in enumerate(crop_names):
+                        test_data.append({
+                            'crop_name': crop_name,
+                            'crop_code': f'CROP{idx+1:03d}',  # Auto-generate code
+                            'language': st.session_state.selected_language or 'en',
+                            'serial_number': idx + 1
+                        })
+                    st.session_state.test_data = test_data
                     st.rerun()
-                else:
-                    st.error("No data to test. Please check your CSV file.")
+            else:
+                st.error("No crop names found in CSV file. Make sure the first column has crop names.")
         except Exception as e:
             st.error(f"Error reading CSV: {str(e)}")
+            st.code(str(e), language='text')
     
     # Sample data option
     st.markdown("---")
