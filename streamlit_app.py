@@ -1184,57 +1184,99 @@ def show_testing_interface():
             """
             components.html(audio_loader_html, height=0)
         
-        # Hidden text input for base64 audio (populated by JS from sessionStorage)
-        audio_base64_data = st.text_input(
-            "Audio Base64",
-            key=audio_base64_key,
-            value="",
-            label_visibility="collapsed",
-            help="Hidden input for direct audio submission"
-        )
-        
-        # Also check sessionStorage directly via injected JS that sets session state
+        # Check sessionStorage FIRST (before creating input) - use injected JS to get value
+        audio_base64_from_storage = None
         if audio_submit_key == recording_key:
-            # Inject JS to read sessionStorage and set the input value
-            session_storage_reader = f"""
+            # Use injected JS to read from sessionStorage and expose to Python
+            storage_reader_js = f"""
             <script>
             (function() {{
                 const key = '{recording_key}';
                 const audioBase64 = sessionStorage.getItem('audio_' + key);
-                
                 if (audioBase64) {{
-                    // Find the input by searching for it
+                    // Store in window object so Python can access via another component
+                    window['streamlit_audio_data_' + key] = audioBase64;
+                    // Also try to trigger input update
                     setTimeout(function() {{
-                        const allInputs = Array.from(document.querySelectorAll('input'));
-                        const targetInput = allInputs.find(input => {{
-                            const parent = input.closest('[data-testid*="stTextInput"]');
-                            return parent && (parent.textContent.includes('Audio Base64') || 
-                                             input.getAttribute('name')?.includes('audio_base64'));
-                        }});
-                        
-                        if (targetInput) {{
-                            targetInput.value = audioBase64;
-                            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            
-                            // Trigger form submission if possible
-                            const form = targetInput.closest('form');
-                            if (form) {{
-                                form.dispatchEvent(new Event('submit', {{ bubbles: true }}));
+                        // Find all text inputs and try to find the right one
+                        const inputs = document.querySelectorAll('input[type="text"]');
+                        inputs.forEach(input => {{
+                            // Check if this is our input by looking at nearby elements
+                            const container = input.closest('[data-testid*="stTextInput"]');
+                            if (container) {{
+                                // Set value and trigger events
+                                input.value = audioBase64;
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                // Force Streamlit to see the change
+                                if (window.streamlit) {{
+                                    try {{
+                                        window.streamlit.setComponentValue(audioBase64);
+                                    }} catch(e) {{
+                                        console.log('setComponentValue failed');
+                                    }}
+                                }}
                             }}
-                        }}
-                    }}, 200);
+                        }});
+                    }}, 500);
+                }}
+            }})();
+            </script>
+            <div id="audio_storage_{recording_key}" data-audio="{recording_key}" style="display:none;"></div>
+            """
+            components.html(storage_reader_js, height=0)
+        
+        # Hidden text input for base64 audio (populated by JS from sessionStorage)
+        # Initialize with value from session state if available
+        initial_audio_value = ""
+        if audio_submit_key == recording_key and f'audio_base64_{recording_key}' in st.session_state:
+            initial_audio_value = st.session_state[f'audio_base64_{recording_key}']
+        
+        audio_base64_data = st.text_input(
+            "Audio Base64",
+            key=audio_base64_key,
+            value=initial_audio_value,
+            label_visibility="collapsed",
+            help="Hidden input for direct audio submission"
+        )
+        
+        # If we have the URL param but no data in input, try to get from sessionStorage via another method
+        if audio_submit_key == recording_key and (not audio_base64_data or len(audio_base64_data) < 100):
+            # Try reading from a data attribute set by JS
+            audio_fetcher_js = f"""
+            <script>
+            (function() {{
+                const key = '{recording_key}';
+                const audioBase64 = sessionStorage.getItem('audio_' + key);
+                if (audioBase64) {{
+                    // Write to a data attribute that we can read
+                    const div = document.getElementById('audio_storage_{recording_key}');
+                    if (div) {{
+                        div.setAttribute('data-audio-base64', audioBase64);
+                    }}
+                    // Also try to directly update the input
+                    const input = document.querySelector('input[key*="{audio_base64_key}"]') ||
+                                 document.querySelector('input[name*="audio_base64"]');
+                    if (input) {{
+                        input.value = audioBase64;
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
                 }}
             }})();
             </script>
             """
-            components.html(session_storage_reader, height=0)
+            components.html(audio_fetcher_js, height=0)
+            # Force a rerun to pick up the value
+            if f'audio_base64_{recording_key}_rerun' not in st.session_state:
+                st.session_state[f'audio_base64_{recording_key}_rerun'] = True
+                st.rerun()
         
         # Check if audio was submitted directly (via sessionStorage -> text input)
         audio_bytes = None
         uploaded_audio = None
         
-        # Try to get from text input first
+        # Try to get from text input
         if audio_base64_data and len(audio_base64_data) > 100:  # Base64 audio will be long
             try:
                 import base64
