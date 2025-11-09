@@ -1171,12 +1171,19 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
+        # Hidden input for direct audio submission (populated by JavaScript)
+        # Put it BEFORE the recorder so it's rendered first
+        audio_base64_key = f"audio_base64_{recording_key}"
+        audio_base64_data = st.text_input(
+            "Audio Data",
+            key=audio_base64_key,
+            value="",
+            label_visibility="collapsed",
+            help="Hidden input for audio data"
+        )
+        
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
-        
-        # Hidden input for direct audio submission (populated by JavaScript)
-        audio_base64_key = f"audio_base64_{recording_key}"
-        audio_format_key = f"audio_format_direct_{recording_key}"
         
         # Check if audio was submitted (via URL parameter)
         audio_submit_key = st.query_params.get('audio_submit')
