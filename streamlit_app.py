@@ -1125,11 +1125,16 @@ def show_testing_interface():
         # Check if audio was submitted (via URL parameter)
         audio_submit_key = st.query_params.get('audio_submit')
         
+        # DEBUG: Show what we're checking
+        st.write(f"🔍 DEBUG: audio_submit_key={audio_submit_key}, recording_key={recording_key}")
+        st.write(f"🔍 DEBUG: Match? {audio_submit_key == recording_key}")
+        
         # If audio was submitted, read from sessionStorage and process IMMEDIATELY
         audio_bytes = None
         uploaded_audio = None
         
         if audio_submit_key == recording_key:
+            st.info("✅ Audio submit detected! Reading from sessionStorage...")
             # Inject JS to read sessionStorage and store in session_state
             audio_loader_js = f"""
             <script>
@@ -1223,12 +1228,18 @@ def show_testing_interface():
                 label_visibility="collapsed"
             )
             
+            # DEBUG: Show what we got
+            st.write(f"🔍 DEBUG: audio_base64_data length = {len(audio_base64_data) if audio_base64_data else 0}")
+            st.write(f"🔍 DEBUG: session_state has key? {audio_base64_key in st.session_state}")
+            
             # Store in session state if we got it
             if audio_base64_data and len(audio_base64_data) > 100:
                 st.session_state[audio_base64_key] = audio_base64_data
+                st.success(f"✅ Got audio data! Length: {len(audio_base64_data)} chars")
             
             # Process if we have audio data
             if audio_base64_data and len(audio_base64_data) > 100:
+                st.info("🔄 Processing audio data...")
                 try:
                     import base64
                     audio_bytes = base64.b64decode(audio_base64_data)
@@ -1274,8 +1285,13 @@ def show_testing_interface():
                 audio_bytes = uploaded_audio.read()
                 st.success("✅ Audio file received!")
         
+        # DEBUG: Show audio_bytes status
+        st.write(f"🔍 DEBUG: audio_bytes is {'SET' if audio_bytes else 'None'}")
+        st.write(f"🔍 DEBUG: audio_processed = {st.session_state.get(f'audio_processed_{recording_key}', False)}")
+        
         # Process audio when uploaded (EXACT FLASK WORKFLOW)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
+            st.success("✅ Audio bytes found! Starting processing...")
             # COMPREHENSIVE DEBUG PANEL - ALWAYS VISIBLE
             st.markdown("---")
             st.markdown("### 🔍 **COMPREHENSIVE DEBUG PANEL**")
