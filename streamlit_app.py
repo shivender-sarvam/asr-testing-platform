@@ -877,12 +877,13 @@ def show_testing_interface():
         recording_key = f"recording_{crop_index}_attempt_{current_attempt_num}"
         audio_submitted_key = f"audio_submitted_{recording_key}"
         
-        # Audio Recording Component
+        # Audio Recording Component - COMPLETE REWRITE
         st.markdown("### 🎤 Record Audio")
         
-        # Custom Audio Recorder HTML Component
-        # Use .format() instead of f-string to avoid issues with curly braces
-        audio_recorder_html = """
+        # Use Streamlit form for reliable submission
+        with st.form(key=f"audio_form_{recording_key}", clear_on_submit=False):
+            # Custom Audio Recorder HTML Component
+            audio_recorder_html = """
         <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
             <button id="startBtn-{recording_key}" style="
                 background: #1e3c72;
