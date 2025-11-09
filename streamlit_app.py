@@ -157,8 +157,10 @@ ALLOWED_DOMAINS = ['gmail.com', 'googlemail.com', 'google.com', 'sarvam.ai']
 
 # Saaras API Configuration (matching Flask/Render version)
 SARVAM_API_URL = "http://103.207.148.23/saaras_v2_6/audio/transcriptions"
-MODEL_NAME = "/models/saaras-raft-wp20-base-v2v-v2-chunk_5-main-bs64/1-gpu"
+# Use same model name as Flask app (which uses default "saarika:v2.5")
+MODEL_NAME = "saarika:v2.5"
 BCP47_CODES = {
+    # Short codes (Streamlit uses these)
     "en": "en-IN",
     "hi": "hi-IN",
     "ta": "ta-IN",
@@ -168,7 +170,19 @@ BCP47_CODES = {
     "bn": "bn-IN",
     "gu": "gu-IN",
     "mr": "mr-IN",
-    "pa": "pa-IN"
+    "pa": "pa-IN",
+    # Full names (Flask uses these, CSV might have these)
+    "english": "en-IN",
+    "hindi": "hi-IN",
+    "tamil": "ta-IN",
+    "telugu": "te-IN",
+    "kannada": "kn-IN",
+    "malayalam": "ml-IN",
+    "bengali": "bn-IN",
+    "gujarati": "gu-IN",
+    "marathi": "mr-IN",
+    "punjabi": "pa-IN",
+    "odia": "or-IN"  # Also support odia
 }
 
 def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav', debug_expander=None):
