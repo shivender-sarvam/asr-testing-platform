@@ -1023,26 +1023,41 @@ def show_testing_interface():
                                 audioFormat = 'wav';
                             }}
                             
-                            // Send to Streamlit via postMessage (direct processing)
+                            // ALWAYS use sessionStorage + URL params (MOST RELIABLE)
+                            // Store audio in sessionStorage
+                            sessionStorage.setItem('audio_' + key, base64Audio);
+                            sessionStorage.setItem('audio_format_' + key, audioFormat);
+                            sessionStorage.setItem('audio_submit_' + key, 'true');
+                            
+                            // Also try postMessage (for iframe communication)
                             if (window.parent && window.parent !== window) {{
-                                window.parent.postMessage({{
-                                    type: 'streamlit:audio_submit',
-                                    key: key,
-                                    audio_base64: base64Audio,
-                                    audio_format: audioFormat,
-                                    mime_type: audioBlob.type
-                                }}, '*');
+                                try {{
+                                    window.parent.postMessage({{
+                                        type: 'streamlit:audio_submit',
+                                        key: key,
+                                        audio_base64: base64Audio,
+                                        audio_format: audioFormat,
+                                        mime_type: audioBlob.type
+                                    }}, '*');
+                                }} catch(e) {{
+                                    console.log('postMessage failed, using sessionStorage');
+                                }}
+                            }}
+                            
+                            // Trigger Streamlit rerun by updating URL (ALWAYS DO THIS)
+                            const currentUrl = window.location.href;
+                            const url = new URL(currentUrl);
+                            url.searchParams.set('audio_submit', key);
+                            url.searchParams.set('_t', Date.now());
+                            
+                            // Navigate to new URL to trigger Streamlit rerun
+                            if (window.parent && window.parent !== window) {{
+                                try {{
+                                    window.parent.location.href = url.toString();
+                                }} catch(e) {{
+                                    window.location.href = url.toString();
+                                }}
                             }} else {{
-                                // Fallback: try to set in sessionStorage and trigger rerun
-                                sessionStorage.setItem('audio_' + key, base64Audio);
-                                sessionStorage.setItem('audio_format_' + key, audioFormat);
-                                sessionStorage.setItem('audio_submit_' + key, 'true');
-                                
-                                // Trigger Streamlit rerun by updating URL
-                                const currentUrl = window.location.href;
-                                const url = new URL(currentUrl);
-                                url.searchParams.set('audio_submit', key);
-                                url.searchParams.set('_t', Date.now());
                                 window.location.href = url.toString();
                             }}
                             
@@ -1123,42 +1138,53 @@ def show_testing_interface():
         audio_base64_key = f"audio_base64_{recording_key}"
         audio_format_key = f"audio_format_direct_{recording_key}"
         
-        # Component to inject JS that listens for postMessage and populates the input
-        audio_receiver_html = f"""
-        <script>
-        (function() {{
-            const key = '{recording_key}';
-            
-            // Listen for postMessage from iframe
-            window.addEventListener('message', function(event) {{
-                if (event.data && event.data.type === 'streamlit:audio_submit' && event.data.key === key) {{
-                    const audioBase64 = event.data.audio_base64;
-                    const audioFormat = event.data.audio_format;
-                    
-                    // Find the hidden input and populate it
-                    const base64Input = window.parent.document.querySelector('input[data-testid*="stTextInput"][aria-label*="audio_base64"]');
-                    if (base64Input) {{
-                        // Use Streamlit's setComponentValue if available
-                        if (window.parent.streamlit && window.parent.streamlit.setComponentValue) {{
-                            window.parent.streamlit.setComponentValue(audioBase64);
-                        }} else {{
-                            // Fallback: set value directly
-                            base64Input.value = audioBase64;
-                            base64Input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            base64Input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        }}
-                    }}
-                    
-                    // Store format in sessionStorage for Python to read
-                    sessionStorage.setItem('audio_format_' + key, audioFormat);
-                }}
-            }});
-        }})();
-        </script>
-        """
-        components.html(audio_receiver_html, height=0)
+        # Check if audio was submitted (via URL parameter)
+        audio_submit_key = st.query_params.get('audio_submit')
         
-        # Hidden text input for base64 audio (populated by JS)
+        # Component to read from sessionStorage and populate session state
+        if audio_submit_key == recording_key:
+            audio_loader_html = f"""
+            <script>
+            (function() {{
+                const key = '{recording_key}';
+                
+                // Read from sessionStorage (set by recorder iframe)
+                const audioBase64 = sessionStorage.getItem('audio_' + key);
+                const audioFormat = sessionStorage.getItem('audio_format_' + key);
+                
+                if (audioBase64) {{
+                    // Store in a way Python can access - use a hidden input
+                    // We'll use a data attribute on a div that Python can read
+                    const container = document.createElement('div');
+                    container.id = 'audio_data_' + key;
+                    container.setAttribute('data-audio-base64', audioBase64);
+                    container.setAttribute('data-audio-format', audioFormat || 'webm');
+                    container.style.display = 'none';
+                    document.body.appendChild(container);
+                    
+                    // Also try to find and populate the text input
+                    setTimeout(function() {{
+                        const inputs = document.querySelectorAll('input[type="text"]');
+                        for (let input of inputs) {{
+                            const label = input.closest('[data-testid*="stTextInput"]');
+                            if (label) {{
+                                const labelText = label.textContent || '';
+                                if (labelText.includes('Audio Base64') || input.getAttribute('name')?.includes('audio_base64')) {{
+                                    input.value = audioBase64;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }}, 100);
+                }}
+            }})();
+            </script>
+            """
+            components.html(audio_loader_html, height=0)
+        
+        # Hidden text input for base64 audio (populated by JS from sessionStorage)
         audio_base64_data = st.text_input(
             "Audio Base64",
             key=audio_base64_key,
@@ -1167,10 +1193,48 @@ def show_testing_interface():
             help="Hidden input for direct audio submission"
         )
         
-        # Check if audio was submitted directly (via postMessage)
+        # Also check sessionStorage directly via injected JS that sets session state
+        if audio_submit_key == recording_key:
+            # Inject JS to read sessionStorage and set the input value
+            session_storage_reader = f"""
+            <script>
+            (function() {{
+                const key = '{recording_key}';
+                const audioBase64 = sessionStorage.getItem('audio_' + key);
+                
+                if (audioBase64) {{
+                    // Find the input by searching for it
+                    setTimeout(function() {{
+                        const allInputs = Array.from(document.querySelectorAll('input'));
+                        const targetInput = allInputs.find(input => {{
+                            const parent = input.closest('[data-testid*="stTextInput"]');
+                            return parent && (parent.textContent.includes('Audio Base64') || 
+                                             input.getAttribute('name')?.includes('audio_base64'));
+                        }});
+                        
+                        if (targetInput) {{
+                            targetInput.value = audioBase64;
+                            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            
+                            // Trigger form submission if possible
+                            const form = targetInput.closest('form');
+                            if (form) {{
+                                form.dispatchEvent(new Event('submit', {{ bubbles: true }}));
+                            }}
+                        }}
+                    }}, 200);
+                }}
+            }})();
+            </script>
+            """
+            components.html(session_storage_reader, height=0)
+        
+        # Check if audio was submitted directly (via sessionStorage -> text input)
         audio_bytes = None
         uploaded_audio = None
         
+        # Try to get from text input first
         if audio_base64_data and len(audio_base64_data) > 100:  # Base64 audio will be long
             try:
                 import base64
@@ -1182,8 +1246,18 @@ def show_testing_interface():
                     'type': 'audio/webm'
                 })()
                 st.success("✅ Audio received directly! Processing...")
+                # Clear sessionStorage after successful read
+                clear_storage_js = f"""
+                <script>
+                sessionStorage.removeItem('audio_{recording_key}');
+                sessionStorage.removeItem('audio_format_{recording_key}');
+                sessionStorage.removeItem('audio_submit_{recording_key}');
+                </script>
+                """
+                components.html(clear_storage_js, height=0)
             except Exception as e:
                 st.error(f"Error processing direct audio: {e}")
+                st.code(str(e), language='text')
                 audio_bytes = None
         
         # Fallback: File uploader for audio (if direct processing doesn't work)
