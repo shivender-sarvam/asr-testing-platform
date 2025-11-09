@@ -1262,9 +1262,6 @@ def show_testing_interface():
                 value="",
                 label_visibility="collapsed"
             )
-                value="",
-                label_visibility="collapsed"
-            )
         
         # Fallback: File uploader (only if direct processing failed)
         if not audio_bytes:
