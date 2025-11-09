@@ -1229,29 +1229,37 @@ def show_testing_interface():
             
             # Process if we have audio data
             if audio_base64_data and len(audio_base64_data) > 100:
-            try:
-                import base64
-                audio_bytes = base64.b64decode(audio_base64_data)
-                # Create a mock file object for processing
-                uploaded_audio = type('obj', (object,), {
-                    'read': lambda: audio_bytes,
-                    'name': f'recording_{recording_key}.webm',
-                    'type': 'audio/webm'
-                })()
-                st.success("✅ Audio received directly! Processing...")
-                # Clear sessionStorage after successful read
-                clear_storage_js = f"""
-                <script>
-                sessionStorage.removeItem('audio_{recording_key}');
-                sessionStorage.removeItem('audio_format_{recording_key}');
-                sessionStorage.removeItem('audio_submit_{recording_key}');
-                </script>
-                """
-                components.html(clear_storage_js, height=0)
-            except Exception as e:
-                st.error(f"Error processing direct audio: {e}")
-                st.code(str(e), language='text')
-                audio_bytes = None
+                try:
+                    import base64
+                    audio_bytes = base64.b64decode(audio_base64_data)
+                    # Create a mock file object for processing
+                    uploaded_audio = type('obj', (object,), {
+                        'read': lambda: audio_bytes,
+                        'name': f'recording_{recording_key}.webm',
+                        'type': 'audio/webm'
+                    })()
+                    st.success("✅ Audio received directly! Processing...")
+                    # Clear sessionStorage after successful read
+                    clear_storage_js = f"""
+                    <script>
+                    sessionStorage.removeItem('audio_{recording_key}');
+                    sessionStorage.removeItem('audio_format_{recording_key}');
+                    sessionStorage.removeItem('audio_submit_{recording_key}');
+                    </script>
+                    """
+                    components.html(clear_storage_js, height=0)
+                except Exception as e:
+                    st.error(f"Error processing direct audio: {e}")
+                    st.code(str(e), language='text')
+                    audio_bytes = None
+        else:
+            # No audio submitted yet - create empty input
+            audio_base64_data = st.text_input(
+                "Audio Base64",
+                key=audio_base64_key,
+                value="",
+                label_visibility="collapsed"
+            )
         
         # Fallback: File uploader (only if direct processing failed)
         if not audio_bytes:
