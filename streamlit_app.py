@@ -993,7 +993,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - DIRECT PROCESSING (like Flask app)
+                    // Submit button handler - Populate input and let form handle submission
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1001,14 +1001,13 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Processing...';
+                        submitBtn.textContent = '⏳ Preparing...';
                         
                         try {{
-                            // Convert blob to base64 (for direct transfer to Streamlit)
+                            // Convert blob to base64
                             const reader = new FileReader();
                             const base64Promise = new Promise((resolve, reject) => {{
                                 reader.onload = () => {{
-                                    // Remove data:audio/webm;base64, prefix
                                     const base64 = reader.result.split(',')[1];
                                     resolve(base64);
                                 }};
@@ -1018,39 +1017,48 @@ def show_testing_interface():
                             reader.readAsDataURL(audioBlob);
                             const base64Audio = await base64Promise;
                             
-                            // Determine audio format from mime type
-                            let audioFormat = 'webm';
-                            if (audioBlob.type.includes('wav')) {{
-                                audioFormat = 'wav';
-                            }}
-                            
-                            // Store audio in sessionStorage (SIMPLE & RELIABLE)
-                            sessionStorage.setItem('audio_' + key, base64Audio);
-                            sessionStorage.setItem('audio_format_' + key, audioFormat);
-                            sessionStorage.setItem('audio_submit_' + key, 'true');
-                            
-                            // Trigger Streamlit rerun with URL param
-                            const currentUrl = window.location.href;
-                            const url = new URL(currentUrl);
-                            url.searchParams.set('audio_submit', key);
-                            url.searchParams.set('_t', Date.now());
-                            
-                            // Navigate to trigger processing
-                            if (window.parent && window.parent !== window) {{
-                                try {{
-                                    window.parent.location.href = url.toString();
-                                }} catch(e) {{
-                                    window.location.href = url.toString();
+                            // Find and populate the hidden text input
+                            setTimeout(function() {{
+                                const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                                let targetInput = null;
+                                for (let input of inputs) {{
+                                    const container = input.closest('[data-testid*="stTextInput"]');
+                                    if (container) {{
+                                        const label = container.querySelector('label');
+                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                            targetInput = input;
+                                            break;
+                                        }}
+                                    }}
                                 }}
-                            }} else {{
-                                window.location.href = url.toString();
-                            }}
+                                
+                                if (targetInput) {{
+                                    targetInput.value = base64Audio;
+                                    targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    
+                                    // Find and click the form submit button
+                                    setTimeout(function() {{
+                                        const submitButtons = Array.from(document.querySelectorAll('button'));
+                                        const formSubmitBtn = submitButtons.find(btn => 
+                                            btn.textContent.includes('Submit') || btn.textContent.includes('Process')
+                                        );
+                                        if (formSubmitBtn) {{
+                                            formSubmitBtn.click();
+                                        }} else {{
+                                            alert('Please click the "Submit & Process" button below');
+                                        }}
+                                    }}, 100);
+                                }} else {{
+                                    alert('Could not find audio input. Please refresh and try again.');
+                                }}
+                            }}, 200);
                             
-                            submitBtn.textContent = '⏳ Processing...';
-                            submitBtn.style.background = '#ffc107';
+                            submitBtn.textContent = '✅ Ready - Click Submit & Process below';
+                            submitBtn.style.background = '#28a745';
                         }} catch (error) {{
-                            console.error('Error submitting audio:', error);
-                            alert('Error submitting audio: ' + error.message);
+                            console.error('Error preparing audio:', error);
+                            alert('Error preparing audio: ' + error.message);
                             submitBtn.disabled = false;
                             submitBtn.textContent = '📤 Submit Recording';
                             submitBtn.style.background = '#007bff';
