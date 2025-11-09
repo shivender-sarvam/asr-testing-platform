@@ -1061,8 +1061,21 @@ def show_testing_interface():
                                 window.location.href = url.toString();
                             }}
                             
-                            submitBtn.textContent = '✅ Processing...';
+                            // Download file automatically (user will upload it)
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            const a = document.createElement('a');
+                            a.href = audioUrl;
+                            a.download = 'recording_' + key + '.webm';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(audioUrl);
+                            
+                            submitBtn.textContent = '✅ Downloaded! Upload below';
                             submitBtn.style.background = '#28a745';
+                            
+                            // Show message to user
+                            alert('Audio downloaded! Please upload it using the file uploader below.');
                         }} catch (error) {{
                             console.error('Error submitting audio:', error);
                             alert('Error submitting audio: ' + error.message);
@@ -1302,15 +1315,16 @@ def show_testing_interface():
                 st.code(str(e), language='text')
                 audio_bytes = None
         
-        # Fallback: File uploader for audio (if direct processing doesn't work)
+        # File uploader for audio (PRIMARY METHOD - most reliable)
         if not audio_bytes:
             st.markdown("---")
-            st.markdown("**📤 Or upload audio file manually (fallback):**")
+            st.markdown("**📤 Upload your recorded audio:**")
+            st.info("💡 **After clicking 'Submit Recording', the audio file will download automatically. Then upload it here.**")
             uploaded_audio = st.file_uploader(
                 "Choose audio file",
                 type=['webm', 'wav', 'mp3'],
                 key=f"audio_upload_{recording_key}",
-                help="If direct processing doesn't work, you can upload the file here"
+                help="Upload the audio file that was downloaded when you clicked 'Submit Recording'"
             )
             
             if uploaded_audio is not None:
