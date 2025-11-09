@@ -1254,7 +1254,7 @@ def show_testing_interface():
             st.rerun()
         
         # If we don't have audio yet, create empty input
-        if audio_bytes is None and audio_submit_key != recording_key and audio_loaded_key != recording_key:
+        if audio_bytes is None and audio_submit_key != recording_key and (not audio_loaded_key or audio_loaded_key != recording_key):
             audio_base64_key = f"audio_base64_{recording_key}"
             audio_base64_data = st.text_input(
                 "Audio Base64",
