@@ -992,7 +992,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - DOWNLOAD FILE (MOST RELIABLE)
+                    // Submit button handler - DIRECT PROCESSING (like Flask app)
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1000,20 +1000,61 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Downloading...';
+                        submitBtn.textContent = '⏳ Processing...';
                         
-                        // Download audio file - user will upload it
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        const a = document.createElement('a');
-                        a.href = audioUrl;
-                        a.download = 'recording_' + key + '.webm';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(audioUrl);
-                        
-                        submitBtn.textContent = '✅ Downloaded! Upload below';
-                        submitBtn.style.background = '#28a745';
+                        try {{
+                            // Convert blob to base64 (for direct transfer to Streamlit)
+                            const reader = new FileReader();
+                            const base64Promise = new Promise((resolve, reject) => {{
+                                reader.onload = () => {{
+                                    // Remove data:audio/webm;base64, prefix
+                                    const base64 = reader.result.split(',')[1];
+                                    resolve(base64);
+                                }};
+                                reader.onerror = reject;
+                            }});
+                            
+                            reader.readAsDataURL(audioBlob);
+                            const base64Audio = await base64Promise;
+                            
+                            // Determine audio format from mime type
+                            let audioFormat = 'webm';
+                            if (audioBlob.type.includes('wav')) {{
+                                audioFormat = 'wav';
+                            }}
+                            
+                            // Send to Streamlit via postMessage (direct processing)
+                            if (window.parent && window.parent !== window) {{
+                                window.parent.postMessage({{
+                                    type: 'streamlit:audio_submit',
+                                    key: key,
+                                    audio_base64: base64Audio,
+                                    audio_format: audioFormat,
+                                    mime_type: audioBlob.type
+                                }}, '*');
+                            }} else {{
+                                // Fallback: try to set in sessionStorage and trigger rerun
+                                sessionStorage.setItem('audio_' + key, base64Audio);
+                                sessionStorage.setItem('audio_format_' + key, audioFormat);
+                                sessionStorage.setItem('audio_submit_' + key, 'true');
+                                
+                                // Trigger Streamlit rerun by updating URL
+                                const currentUrl = window.location.href;
+                                const url = new URL(currentUrl);
+                                url.searchParams.set('audio_submit', key);
+                                url.searchParams.set('_t', Date.now());
+                                window.location.href = url.toString();
+                            }}
+                            
+                            submitBtn.textContent = '✅ Processing...';
+                            submitBtn.style.background = '#28a745';
+                        }} catch (error) {{
+                            console.error('Error submitting audio:', error);
+                            alert('Error submitting audio: ' + error.message);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '📤 Submit Recording';
+                            submitBtn.style.background = '#007bff';
+                        }}
                     }});
                     
                     // Record again button - always increment attempt if results are shown
@@ -1078,21 +1119,87 @@ def show_testing_interface():
         # Render the audio recorder
         components.html(audio_recorder_html, height=300)
         
-        # File uploader for audio (SIMPLE & RELIABLE)
-        st.markdown("---")
-        st.markdown("**📤 Upload your recorded audio:**")
-        uploaded_audio = st.file_uploader(
-            "Choose audio file",
-            type=['webm', 'wav', 'mp3'],
-            key=f"audio_upload_{recording_key}",
-            help="After recording, click Submit to download, then upload the file here"
+        # Hidden input for direct audio submission (populated by JavaScript)
+        audio_base64_key = f"audio_base64_{recording_key}"
+        audio_format_key = f"audio_format_direct_{recording_key}"
+        
+        # Component to inject JS that listens for postMessage and populates the input
+        audio_receiver_html = f"""
+        <script>
+        (function() {{
+            const key = '{recording_key}';
+            
+            // Listen for postMessage from iframe
+            window.addEventListener('message', function(event) {{
+                if (event.data && event.data.type === 'streamlit:audio_submit' && event.data.key === key) {{
+                    const audioBase64 = event.data.audio_base64;
+                    const audioFormat = event.data.audio_format;
+                    
+                    // Find the hidden input and populate it
+                    const base64Input = window.parent.document.querySelector('input[data-testid*="stTextInput"][aria-label*="audio_base64"]');
+                    if (base64Input) {{
+                        // Use Streamlit's setComponentValue if available
+                        if (window.parent.streamlit && window.parent.streamlit.setComponentValue) {{
+                            window.parent.streamlit.setComponentValue(audioBase64);
+                        }} else {{
+                            // Fallback: set value directly
+                            base64Input.value = audioBase64;
+                            base64Input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            base64Input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                    }}
+                    
+                    // Store format in sessionStorage for Python to read
+                    sessionStorage.setItem('audio_format_' + key, audioFormat);
+                }}
+            }});
+        }})();
+        </script>
+        """
+        components.html(audio_receiver_html, height=0)
+        
+        # Hidden text input for base64 audio (populated by JS)
+        audio_base64_data = st.text_input(
+            "Audio Base64",
+            key=audio_base64_key,
+            value="",
+            label_visibility="collapsed",
+            help="Hidden input for direct audio submission"
         )
         
-        # Process uploaded audio
+        # Check if audio was submitted directly (via postMessage)
         audio_bytes = None
-        if uploaded_audio is not None:
-            audio_bytes = uploaded_audio.read()
-            st.success("✅ Audio file received!")
+        uploaded_audio = None
+        
+        if audio_base64_data and len(audio_base64_data) > 100:  # Base64 audio will be long
+            try:
+                import base64
+                audio_bytes = base64.b64decode(audio_base64_data)
+                # Create a mock file object for processing
+                uploaded_audio = type('obj', (object,), {
+                    'read': lambda: audio_bytes,
+                    'name': f'recording_{recording_key}.webm',
+                    'type': 'audio/webm'
+                })()
+                st.success("✅ Audio received directly! Processing...")
+            except Exception as e:
+                st.error(f"Error processing direct audio: {e}")
+                audio_bytes = None
+        
+        # Fallback: File uploader for audio (if direct processing doesn't work)
+        if not audio_bytes:
+            st.markdown("---")
+            st.markdown("**📤 Or upload audio file manually (fallback):**")
+            uploaded_audio = st.file_uploader(
+                "Choose audio file",
+                type=['webm', 'wav', 'mp3'],
+                key=f"audio_upload_{recording_key}",
+                help="If direct processing doesn't work, you can upload the file here"
+            )
+            
+            if uploaded_audio is not None:
+                audio_bytes = uploaded_audio.read()
+                st.success("✅ Audio file received!")
         
         # Process audio when uploaded (EXACT FLASK WORKFLOW)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
