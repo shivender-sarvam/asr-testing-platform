@@ -1243,11 +1243,13 @@ def show_testing_interface():
         
         # Check for audio_loaded param (second rerun after JS populated input)
         audio_loaded_key = st.query_params.get('audio_loaded')
-        if audio_loaded_key == recording_key and f'audio_loaded_{recording_key}' not in st.session_state:
-            st.session_state[f'audio_loaded_{recording_key}'] = True
-            # Remove audio_submit param to avoid loop
-            st.query_params.pop('audio_submit', None)
-            st.rerun()
+        if audio_loaded_key == recording_key:
+            if f'audio_loaded_{recording_key}' not in st.session_state:
+                st.session_state[f'audio_loaded_{recording_key}'] = True
+                # Clear the audio_submit flag to avoid re-entering first branch
+                if 'audio_submit' in st.query_params:
+                    st.query_params.pop('audio_submit', None)
+                st.rerun()
         
         # If we don't have audio yet, create empty input
         if audio_bytes is None and audio_submit_key != recording_key and (not audio_loaded_key or audio_loaded_key != recording_key):
