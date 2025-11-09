@@ -1017,42 +1017,89 @@ def show_testing_interface():
                             reader.readAsDataURL(audioBlob);
                             const base64Audio = await base64Promise;
                             
-                            // Find and populate the hidden text input
-                            setTimeout(function() {{
-                                const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
-                                let targetInput = null;
-                                for (let input of inputs) {{
+                            // Find and populate the hidden text input - MULTIPLE STRATEGIES
+                            let targetInput = null;
+                            
+                            // Strategy 1: Find by data attribute
+                            targetInput = document.querySelector('input[data-audio-input="' + key + '"]');
+                            
+                            // Strategy 2: Find by key in form
+                            if (!targetInput) {{
+                                const form = document.querySelector('form[data-testid*="stForm"]');
+                                if (form) {{
+                                    const inputs = form.querySelectorAll('input[type="text"]');
+                                    for (let input of inputs) {{
+                                        const container = input.closest('[data-testid*="stTextInput"]');
+                                        if (container) {{
+                                            const label = container.querySelector('label');
+                                            if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                                targetInput = input;
+                                                break;
+                                            }}
+                                        }}
+                                    }}
+                                }}
+                            }}
+                            
+                            // Strategy 3: Find any hidden text input
+                            if (!targetInput) {{
+                                const allInputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                                for (let input of allInputs) {{
                                     const container = input.closest('[data-testid*="stTextInput"]');
                                     if (container) {{
                                         const label = container.querySelector('label');
-                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                        const isHidden = !label || label.style.display === 'none' || 
+                                                       label.textContent === '' || 
+                                                       label.textContent === 'Audio Data' ||
+                                                       container.style.display === 'none';
+                                        if (isHidden && input.value === '') {{
                                             targetInput = input;
                                             break;
                                         }}
                                     }}
                                 }}
+                            }}
+                            
+                            if (targetInput) {{
+                                targetInput.value = base64Audio;
+                                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                 
-                                if (targetInput) {{
-                                    targetInput.value = base64Audio;
-                                    targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    
-                                    // Find and click the form submit button
-                                    setTimeout(function() {{
-                                        const submitButtons = Array.from(document.querySelectorAll('button'));
-                                        const formSubmitBtn = submitButtons.find(btn => 
-                                            btn.textContent.includes('Submit') || btn.textContent.includes('Process')
-                                        );
-                                        if (formSubmitBtn) {{
-                                            formSubmitBtn.click();
-                                        }} else {{
-                                            alert('Please click the "Submit & Process" button below');
+                                // Also store in sessionStorage as backup
+                                sessionStorage.setItem('audio_' + key, base64Audio);
+                                
+                                // Find and click the form submit button
+                                setTimeout(function() {{
+                                    // Look for the form submit button
+                                    const form = targetInput.closest('form');
+                                    if (form) {{
+                                        const submitBtn = form.querySelector('button[type="submit"]');
+                                        if (submitBtn) {{
+                                            submitBtn.click();
+                                            return;
                                         }}
-                                    }}, 100);
-                                }} else {{
-                                    alert('Could not find audio input. Please refresh and try again.');
-                                }}
-                            }}, 200);
+                                    }}
+                                    
+                                    // Fallback: find any button with Submit/Process text
+                                    const submitButtons = Array.from(document.querySelectorAll('button'));
+                                    const formSubmitBtn = submitButtons.find(btn => 
+                                        (btn.textContent.includes('Submit') || btn.textContent.includes('Process')) &&
+                                        btn.type === 'submit'
+                                    );
+                                    if (formSubmitBtn) {{
+                                        formSubmitBtn.click();
+                                    }} else {{
+                                        submitBtn.textContent = '✅ Audio ready! Click "Submit & Process" below';
+                                        submitBtn.style.background = '#28a745';
+                                    }}
+                                }}, 300);
+                            }} else {{
+                                // Last resort: store in sessionStorage and show message
+                                sessionStorage.setItem('audio_' + key, base64Audio);
+                                submitBtn.textContent = '✅ Audio ready! Click "Submit & Process" below';
+                                submitBtn.style.background = '#28a745';
+                                alert('Audio prepared! Please click the "Submit & Process" button below to process.');
+                            }}
                             
                             submitBtn.textContent = '✅ Ready - Click Submit & Process below';
                             submitBtn.style.background = '#28a745';
