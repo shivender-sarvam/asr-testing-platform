@@ -1125,10 +1125,6 @@ def show_testing_interface():
         # Check if audio was submitted (via URL parameter)
         audio_submit_key = st.query_params.get('audio_submit')
         
-        # DEBUG: Show what we're checking
-        st.write(f"🔍 DEBUG: audio_submit_key={audio_submit_key}, recording_key={recording_key}")
-        st.write(f"🔍 DEBUG: Match? {audio_submit_key == recording_key}")
-        
         # If audio was submitted, read from sessionStorage and process IMMEDIATELY
         audio_bytes = None
         uploaded_audio = None
@@ -1276,13 +1272,8 @@ def show_testing_interface():
                 audio_bytes = uploaded_audio.read()
                 st.success("✅ Audio file received!")
         
-        # DEBUG: Show audio_bytes status
-        st.write(f"🔍 DEBUG: audio_bytes is {'SET' if audio_bytes else 'None'}")
-        st.write(f"🔍 DEBUG: audio_processed = {st.session_state.get(f'audio_processed_{recording_key}', False)}")
-        
         # Process audio when uploaded (EXACT FLASK WORKFLOW)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
-            st.success("✅ Audio bytes found! Starting processing...")
             # COMPREHENSIVE DEBUG PANEL - ALWAYS VISIBLE
             st.markdown("---")
             st.markdown("### 🔍 **COMPREHENSIVE DEBUG PANEL**")
