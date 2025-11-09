@@ -882,6 +882,17 @@ def show_testing_interface():
         
         # Use Streamlit form for reliable submission
         with st.form(key=f"audio_form_{recording_key}", clear_on_submit=False):
+            # Hidden input for base64 audio (populated by JavaScript)
+            # Put it FIRST so it's rendered before the recorder
+            audio_base64_key = f"audio_base64_{recording_key}"
+            audio_base64_data = st.text_input(
+                "Audio Data",
+                key=audio_base64_key,
+                value="",
+                label_visibility="collapsed",
+                help="Hidden input for audio data"
+            )
+            
             # Custom Audio Recorder HTML Component
             audio_recorder_html = """
         <div id="audio-recorder-{recording_key}" style="text-align: center; padding: 20px;">
@@ -1171,19 +1182,157 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
-        # Hidden input for direct audio submission (populated by JavaScript)
-        # Put it BEFORE the recorder so it's rendered first
-        audio_base64_key = f"audio_base64_{recording_key}"
-        audio_base64_data = st.text_input(
-            "Audio Data",
-            key=audio_base64_key,
-            value="",
-            label_visibility="collapsed",
-            help="Hidden input for audio data"
-        )
+            # Render the audio recorder
+            components.html(audio_recorder_html, height=300)
+            
+            # Submit button
+            submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
+            
+            if submitted:
+                # Try to get audio from input first, then sessionStorage as fallback
+                audio_data = audio_base64_data
+                
+                # Fallback: try to read from sessionStorage if input is empty
+                if not audio_data or len(audio_data) < 100:
+                    # Store sessionStorage value in a way Python can read it
+                    # We'll use a query param to trigger a rerun with the data
+                    read_storage_js = f"""
+                    <script>
+                    const audioData = sessionStorage.getItem('audio_{recording_key}');
+                    if (audioData) {{
+                        // Store in a way that persists - use URL param
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('audio_from_storage', audioData.substring(0, 50)); // First 50 chars as identifier
+                        // Store full data in sessionStorage with a flag
+                        sessionStorage.setItem('audio_ready_{recording_key}', 'true');
+                        window.location.href = url.toString();
+                    }}
+                    </script>
+                    """
+                    components.html(read_storage_js, height=0)
+                    # Check sessionStorage flag
+                    if f'audio_ready_{recording_key}' in st.query_params.get('audio_from_storage', ''):
+                        # Read from sessionStorage via another JS injection
+                        get_storage_js = f"""
+                        <script>
+                        const fullData = sessionStorage.getItem('audio_{recording_key}');
+                        if (fullData) {{
+                            // Try to populate input
+                            const input = document.querySelector('input[data-testid*="stTextInput"] input[type="text"]');
+                            if (input) {{
+                                input.value = fullData;
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            }}
+                        }}
+                        </script>
+                        """
+                        components.html(get_storage_js, height=0)
+                        # Re-read from session state
+                        audio_data = st.session_state.get(audio_base64_key, '')
+                
+                # Process audio if we have it
+                if audio_data and len(audio_data) > 100:
+                    try:
+                        import base64
+                        audio_bytes = base64.b64decode(audio_data)
+                        
+                        # Convert webm to wav if needed
+                        audio_format = 'webm'
+                        try:
+                            from pydub import AudioSegment
+                            import io
+                            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+                            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                            wav_buffer = io.BytesIO()
+                            audio_segment.export(wav_buffer, format="wav")
+                            audio_bytes = wav_buffer.getvalue()
+                            audio_format = 'wav'
+                        except:
+                            pass
+                        
+                        # Create mock file object
+                        uploaded_audio = type('obj', (object,), {
+                            'read': lambda: audio_bytes,
+                            'name': f'recording_{recording_key}.webm',
+                            'type': 'audio/webm'
+                        })()
+                        
+                        # Process immediately
+                        if not st.session_state.get(f'audio_processed_{recording_key}', False):
+                            with st.spinner("🔄 Processing audio with ASR..."):
+                                try:
+                                    # Get API key
+                                    api_key = None
+                                    try:
+                                        api_key = st.secrets.get('SARVAM_API_KEY', '')
+                                    except:
+                                        try:
+                                            api_key = st.secrets.secrets.get('SARVAM_API_KEY', '')
+                                        except:
+                                            api_key = os.environ.get('SARVAM_API_KEY', '')
+                                    
+                                    # Call ASR API
+                                    asr_transcript = call_sarvam_asr(
+                                        audio_bytes,
+                                        language,
+                                        api_key,
+                                        audio_format=audio_format,
+                                        debug_expander=None
+                                    )
+                                    
+                                    if asr_transcript:
+                                        matches = check_match(crop_name, asr_transcript)
+                                        st.session_state[f'asr_result_{recording_key}'] = {
+                                            'transcript': asr_transcript,
+                                            'matches': matches
+                                        }
+                                        st.session_state[audio_submitted_key] = True
+                                        st.session_state[f'audio_processed_{recording_key}'] = True
+                                        
+                                        # Save result
+                                        test_result = {
+                                            "qa_name": st.session_state.qa_name,
+                                            "qa_email": st.session_state.user_info.get('email', '') if st.session_state.user_info else '',
+                                            "session_id": st.session_state.session_id,
+                                            "crop_name": crop_name,
+                                            "crop_code": crop_code,
+                                            "language": language,
+                                            "attempt_number": current_attempt_num,
+                                            "expected": crop_name,
+                                            "transcript": asr_transcript,
+                                            "keyword_detected": "Yes" if matches else "No",
+                                            "match": "Yes" if matches else "No",
+                                            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                            "audio_recorded": True
+                                        }
+                                        st.session_state.test_results.append(test_result)
+                                        
+                                        # Save to Azure
+                                        if AZURE_AVAILABLE:
+                                            try:
+                                                user_email = st.session_state.user_info.get('email', 'unknown@example.com') if st.session_state.user_info else 'unknown@example.com'
+                                                upload_single_test_result(
+                                                    test_result=test_result,
+                                                    user_email=user_email,
+                                                    language=language,
+                                                    session_id=st.session_state.session_id
+                                                )
+                                            except:
+                                                pass
+                                        
+                                        st.rerun()
+                                    else:
+                                        st.error("ASR API returned no transcript")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                                    st.code(str(e), language='text')
+                    except Exception as e:
+                        st.error(f"Error processing audio: {e}")
+                        st.code(str(e), language='text')
+                else:
+                    st.warning("⚠️ No audio data found. Please record audio first.")
         
-        # Render the audio recorder
-        components.html(audio_recorder_html, height=300)
+        # Fallback: File uploader (outside form)
         
         # Check if audio was submitted (via URL parameter)
         audio_submit_key = st.query_params.get('audio_submit')
