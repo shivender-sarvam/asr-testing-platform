@@ -345,7 +345,11 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                         if transcript:
                             st.success(f"✅ Transcript found in standard fields: '{transcript}'")
                         else:
-                            st.warning("⚠️ No transcript in 'transcript' or 'text' fields")
+                            st.error("❌ **NO TRANSCRIPT IN STANDARD FIELDS**")
+                            st.write("**Checking response structure:**")
+                            st.json(result)
+                            st.code(f"Available fields: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}", language='text')
+                
                 if transcript:
                     st.success(f"✅ ASR Success: '{transcript}'")
                     return transcript
@@ -357,20 +361,35 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     available_fields = list(result.keys()) if isinstance(result, dict) else 'Not a dict'
                     
                     # Show full response IMMEDIATELY (not hidden) - SUPER PROMINENT
-                    st.error(f"❌ API returned 200 but no transcript in response")
+                    st.error(f"❌ **CRITICAL ERROR: API returned 200 but no transcript in response**")
                     st.markdown("---")
-                    st.markdown("### 🔍 **DEBUG INFO (IMMEDIATELY VISIBLE)**")
-                    st.markdown("**This info will also appear in Error Logs section below**")
+                    st.markdown("### 🔍 **FULL API RESPONSE (IMMEDIATELY VISIBLE)**")
+                    st.markdown("**This is what the API actually returned:**")
                     
-                    # Show full response in multiple formats
-                    st.write("**📋 Full API Response (JSON):**")
+                    # Show full response in multiple formats - MAKE IT HUGE AND VISIBLE
+                    st.markdown("#### 📋 **Full API Response (JSON):**")
                     st.json(result)
                     
-                    # Also show as code block
-                    st.write("**📋 Full API Response (Formatted):**")
+                    # Also show as code block with full details
+                    st.markdown("#### 📋 **Full API Response (Formatted JSON):**")
                     st.code(json.dumps(result, indent=2), language='json')
                     
+                    # Show raw response text too
+                    try:
+                        raw_text = response.text
+                        st.markdown("#### 📋 **Raw Response Text:**")
+                        st.code(raw_text, language='text')
+                    except:
+                        pass
+                    
                     st.warning(f"📋 **Available fields in response:** `{available_fields}`")
+                    
+                    # Check if there's an error message in the response
+                    if isinstance(result, dict):
+                        error_fields = ['error', 'message', 'detail', 'description', 'status', 'code']
+                        for field in error_fields:
+                            if field in result:
+                                st.error(f"⚠️ **Found '{field}' field in response:** `{result[field]}`")
                     
                     # Try to find transcript in other possible field names (check nested too)
                     possible_transcript_fields = ['transcript', 'text', 'transcription', 'result', 'output', 'data', 'content', 'message', 'transcribed_text', 'asr_result']
@@ -1636,11 +1655,11 @@ def show_testing_interface():
                         st.code(f"File extension: {uploaded_audio.name.split('.')[-1]}\nInitial format: {audio_format}", language='text')
                     
                     if uploaded_audio.name.endswith('.webm'):
-                        # Try to convert to WAV if pydub is available (better compatibility)
-                        # But if not available, use webm directly (API should accept it)
+                        # CRITICAL: Flask ALWAYS sends WAV - we must convert too!
+                        # API may not accept webm format
                         try:
                             with debug_expander:
-                                st.write("**Step 2.1: Attempting WebM → WAV Conversion**")
+                                st.write("**Step 2.1: Attempting WebM → WAV Conversion (REQUIRED)**")
                             from pydub import AudioSegment
                             import io
                             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
@@ -1654,13 +1673,16 @@ def show_testing_interface():
                             with debug_expander:
                                 st.success(f"✅ Conversion successful!\nOriginal size: {len(audio_bytes)} bytes\nNew size: {len(audio_bytes)} bytes")
                         except (ImportError, Exception) as e:
-                            # pydub not available or conversion failed - use webm directly
-                            # API should accept webm format
-                            audio_format = 'webm'
-                            conversion_status = f"ℹ️ Using webm format directly (API accepts webm)\nReason: {str(e)}"
-                            st.info("ℹ️ Using webm format directly - API will process it")
+                            # CRITICAL: Conversion failed - this is a BLOCKING error
+                            # Flask always sends WAV, so API might not accept webm
+                            error_msg = f"❌ CRITICAL: Failed to convert webm to wav!\n\nFlask app ALWAYS sends WAV format. The API may not accept webm.\n\nError: {str(e)}\n\nPlease ensure pydub and ffmpeg are installed."
+                            st.error(error_msg)
                             with debug_expander:
-                                st.warning(f"⚠️ Conversion skipped\nReason: {str(e)}\nUsing original webm format")
+                                st.error(f"❌ Conversion FAILED\nReason: {str(e)}\n\nThis is a CRITICAL error - Flask always converts to WAV before sending to API.")
+                            # Still try to send as webm, but warn user
+                            audio_format = 'webm'
+                            conversion_status = f"❌ FAILED - Using webm (may not work!)\nReason: {str(e)}"
+                            st.warning("⚠️ WARNING: Sending as webm format - API may reject this!")
                     
                     # Store conversion status for debugging
                     st.session_state[f'_conversion_status_{recording_key}'] = conversion_status
