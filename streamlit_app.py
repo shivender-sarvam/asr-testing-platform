@@ -878,24 +878,33 @@ def show_testing_interface():
         audio_submitted_key = f"audio_submitted_{recording_key}"
         
         # CRITICAL: Define audio_base64_key BEFORE the form so it's always available
+        # Use a stable key that won't change between reruns
         audio_base64_key = f"audio_base64_{recording_key}"
+        
+        # Store the actual audio data in a separate session state key for persistence
+        audio_data_key = f"audio_data_{recording_key}"
         
         # Audio Recording Component - COMPLETE REWRITE
         st.markdown("### 🎤 Record Audio")
         
         # Use Streamlit form for reliable submission
-        # CRITICAL: Ensure form key is unique and input is only created here
+        # CRITICAL: This is the ONLY place we create the input widget
         with st.form(key=f"audio_form_{recording_key}", clear_on_submit=False):
             # Hidden input for base64 audio (populated by JavaScript)
             # Put it FIRST so it's rendered before the recorder
-            # THIS IS THE ONLY PLACE WHERE WE CREATE THIS INPUT
+            # Read existing value from session state to preserve it across reruns
+            existing_value = st.session_state.get(audio_data_key, "")
             audio_base64_data = st.text_input(
                 "Audio Data",
                 key=audio_base64_key,
-                value=st.session_state.get(audio_base64_key, ""),
+                value=existing_value,
                 label_visibility="collapsed",
                 help="Hidden input for audio data"
             )
+            
+            # Store the value in our persistent key whenever it changes
+            if audio_base64_data and len(audio_base64_data) > 100:
+                st.session_state[audio_data_key] = audio_base64_data
             
             # Custom Audio Recorder HTML Component
             audio_recorder_html = """
