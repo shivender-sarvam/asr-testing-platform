@@ -1084,7 +1084,8 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - EXACT FLASK BEHAVIOR: Auto-submit form immediately
+                    // Submit button handler - SIMPLE: Just store in sessionStorage
+                    // User will click "Submit & Process" button to process
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1092,10 +1093,10 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Processing...';
+                        submitBtn.textContent = '⏳ Preparing...';
                         
                         try {{
-                            // Convert blob to base64 (like Flask does)
+                            // Convert blob to base64 (like Flask FormData)
                             const reader = new FileReader();
                             const base64Promise = new Promise((resolve, reject) => {{
                                 reader.onload = () => {{
@@ -1108,136 +1109,16 @@ def show_testing_interface():
                             reader.readAsDataURL(audioBlob);
                             const base64Audio = await base64Promise;
                             
-                            // Store in sessionStorage as backup
+                            // Store in sessionStorage (accessible from parent window)
                             sessionStorage.setItem('audio_' + key, base64Audio);
                             
-                            // CRITICAL: We're in an iframe, so we need to access parent window
-                            // Use postMessage to communicate with parent Streamlit page
-                            try {{
-                                // Try to access parent window directly first
-                                if (window.parent && window.parent !== window) {{
-                                    // We're in an iframe - use postMessage
-                                    window.parent.postMessage({{
-                                        type: 'streamlit:audio_submit',
-                                        key: key,
-                                        audioData: base64Audio
-                                    }}, '*');
-                                    
-                                    // Also try direct access (might work if same origin)
-                                    try {{
-                                        const parentDoc = window.parent.document;
-                                        const form = parentDoc.querySelector('form[data-testid*="stForm"]');
-                                        if (form) {{
-                                            const inputs = form.querySelectorAll('input[type="text"]');
-                                            for (let input of inputs) {{
-                                                const container = input.closest('[data-testid*="stTextInput"]');
-                                                if (container) {{
-                                                    const label = container.querySelector('label');
-                                                    if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                                        input.value = base64Audio;
-                                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                                        
-                                                        // Click submit button
-                                                        const submitBtn = form.querySelector('button[type="submit"]');
-                                                        if (submitBtn) {{
-                                                            setTimeout(() => submitBtn.click(), 50);
-                                                            return;
-                                                        }}
-                                                    }}
-                                                }}
-                                            }}
-                                        }}
-                                    }} catch (e) {{
-                                        console.log('Direct parent access failed, using postMessage:', e);
-                                    }}
-                                    
-                                    // Fallback: Use postMessage to communicate with parent
-                                    // Parent will handle the navigation
-                                    window.parent.postMessage({{
-                                        type: 'streamlit:audio_ready',
-                                        key: key,
-                                        action: 'submit'
-                                    }}, '*');
-                                    
-                                    // Show success message - parent will handle submission
-                                    submitBtn.textContent = '✅ Audio ready! Processing...';
-                                    submitBtn.style.background = '#28a745';
-                                    return;
-                                }}
-                                
-                                // Not in iframe - direct access
-                                const form = document.querySelector('form[data-testid*="stForm"]');
-                                if (!form) {{
-                                    throw new Error('Form not found');
-                                }}
-                                
-                                const inputs = form.querySelectorAll('input[type="text"]');
-                                let targetInput = null;
-                                
-                                for (let input of inputs) {{
-                                    const container = input.closest('[data-testid*="stTextInput"]');
-                                    if (container) {{
-                                        const label = container.querySelector('label');
-                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                            targetInput = input;
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                if (!targetInput) {{
-                                    throw new Error('Audio input not found in form');
-                                }}
-                                
-                                targetInput.value = base64Audio;
-                                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                
-                                const formSubmitBtn = form.querySelector('button[type="submit"]');
-                                if (formSubmitBtn) {{
-                                    setTimeout(() => formSubmitBtn.click(), 50);
-                                }} else {{
-                                    throw new Error('Form submit button not found');
-                                }}
-                            }} catch (error) {{
-                                // Last resort: store in sessionStorage and use postMessage
-                                sessionStorage.setItem('audio_' + key, base64Audio);
-                                if (window.parent && window.parent !== window) {{
-                                    window.parent.postMessage({{
-                                        type: 'streamlit:audio_ready',
-                                        key: key,
-                                        action: 'submit'
-                                    }}, '*');
-                                }} else {{
-                                    // Not in iframe - try direct form access
-                                    const form = document.querySelector('form[data-testid*="stForm"]');
-                                    if (form) {{
-                                        const inputs = form.querySelectorAll('input[type="text"]');
-                                        for (let input of inputs) {{
-                                            const container = input.closest('[data-testid*="stTextInput"]');
-                                            if (container) {{
-                                                const label = container.querySelector('label');
-                                                if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                                    input.value = base64Audio;
-                                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                                    
-                                                    const submitBtn = form.querySelector('button[type="submit"]');
-                                                    if (submitBtn) {{
-                                                        setTimeout(() => submitBtn.click(), 100);
-                                                    }}
-                                                    break;
-                                                }}
-                                            }}
-                                        }}
-                                    }}
-                                }}
-                            }}
+                            // Show success - user clicks "Submit & Process" button
+                            submitBtn.textContent = '✅ Ready! Click "Submit & Process" below';
+                            submitBtn.style.background = '#28a745';
                             
                         }} catch (error) {{
-                            console.error('Error submitting audio:', error);
-                            alert('Error submitting audio: ' + error.message);
+                            console.error('Error preparing audio:', error);
+                            alert('Error preparing audio: ' + error.message);
                             submitBtn.disabled = false;
                             submitBtn.textContent = '📤 Submit Recording';
                             submitBtn.style.background = '#007bff';
@@ -1354,57 +1235,40 @@ def show_testing_interface():
             submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
             
             if submitted:
-                # CRITICAL: Read from session state first (where Streamlit stores widget values)
+                # SIMPLE: Read from sessionStorage directly (like Flask reads from FormData)
+                # Inject JS to read from sessionStorage and store in Python variable
+                read_audio_js = f"""
+                <script>
+                const audioData = sessionStorage.getItem('audio_{recording_key}');
+                if (audioData) {{
+                    // Store in a way Python can access - use a hidden input
+                    const form = document.querySelector('form[data-testid*="stForm"]');
+                    if (form) {{
+                        const inputs = form.querySelectorAll('input[type="text"]');
+                        for (let input of inputs) {{
+                            const container = input.closest('[data-testid*="stTextInput"]');
+                            if (container) {{
+                                const label = container.querySelector('label');
+                                if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                    input.value = audioData;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+                </script>
+                """
+                components.html(read_audio_js, height=0)
+                
+                # Read from session state (where JS just stored it)
                 audio_data = st.session_state.get(audio_base64_key, '')
                 
-                # Also try the widget value directly as fallback
+                # Also try widget value
                 if (not audio_data or len(audio_data) < 100) and audio_base64_data:
                     audio_data = audio_base64_data
-                
-                # If still empty, try to read from sessionStorage via JavaScript injection
-                if not audio_data or len(audio_data) < 100:
-                    # Inject JS to read from sessionStorage and store in session state
-                    read_storage_js = f"""
-                    <script>
-                    (function() {{
-                        const audioData = sessionStorage.getItem('audio_{recording_key}');
-                        if (audioData && audioData.length > 100) {{
-                            // Store in Streamlit session state via the input
-                            const input = document.querySelector('input[type="text"][data-baseweb*="input"]');
-                            if (input) {{
-                                input.value = audioData;
-                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            }}
-                            // Also try to find by key attribute
-                            const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
-                            for (let inp of inputs) {{
-                                const container = inp.closest('[data-testid*="stTextInput"]');
-                                if (container) {{
-                                    const label = container.querySelector('label');
-                                    if (!label || label.style.display === 'none' || label.textContent === 'Audio Data') {{
-                                        inp.value = audioData;
-                                        inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                        break;
-                                    }}
-                                }}
-                            }}
-                            // Trigger rerun to process
-                            setTimeout(function() {{
-                                if (window.parent && window.parent.streamlit) {{
-                                    window.parent.streamlit.rerun();
-                                }} else {{
-                                    window.location.reload();
-                                }}
-                            }}, 100);
-                        }}
-                    }})();
-                    </script>
-                    """
-                    components.html(read_storage_js, height=0)
-                    # Re-read from session state after JS injection
-                    audio_data = st.session_state.get(audio_base64_key, '')
                 
                 # Process audio if we have it
                 if audio_data and len(audio_data) > 100:
