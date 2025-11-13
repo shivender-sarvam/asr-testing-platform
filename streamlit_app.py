@@ -1603,9 +1603,6 @@ def show_testing_interface():
         
         # Process audio from file_uploader (PRIMARY METHOD - Solution 1)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
-        
-        # Process audio when uploaded (EXACT FLASK WORKFLOW)
-        if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
             # COMPREHENSIVE DEBUG PANEL - ALWAYS VISIBLE
             st.markdown("---")
             st.markdown("### 🔍 **COMPREHENSIVE DEBUG PANEL**")
