@@ -1353,14 +1353,10 @@ def show_testing_interface():
         
         # If audio_loaded flag is set, audio should be in input - process it
         if f'audio_loaded_{recording_key}' in st.session_state:
-            audio_base64_data = st.text_input(
-                "Audio Base64",
-                key=audio_base64_key,
-                value=st.session_state.get(audio_base64_key, ''),
-                label_visibility="collapsed"
-            )
+            # Read from the form input (already created above) - DON'T create duplicate
+            audio_base64_data = st.session_state.get(audio_base64_key, '')
             
-            # Store in session state
+            # Store in session state if we have data
             if audio_base64_data and len(audio_base64_data) > 100:
                 st.session_state[audio_base64_key] = audio_base64_data
             
@@ -1458,22 +1454,13 @@ def show_testing_interface():
             """
             components.html(audio_loader_js, height=0)
             st.info("⏳ Loading audio from sessionStorage...")
-            # Create empty input for JS to populate
-            audio_base64_data = st.text_input(
-                "Audio Base64",
-                key=audio_base64_key,
-                value="",
-                label_visibility="collapsed"
-            )
+            # Don't create duplicate input - the form input above already exists
+            # JS will populate it, then we'll read from session state on next rerun
         
-        # If we don't have audio yet, create empty input
+        # If we don't have audio yet, read from form input (already created above)
         elif audio_bytes is None:
-            audio_base64_data = st.text_input(
-                "Audio Base64",
-                key=audio_base64_key,
-                value="",
-                label_visibility="collapsed"
-            )
+            # Read from the form input - DON'T create duplicate
+            audio_base64_data = st.session_state.get(audio_base64_key, '')
         
         # Fallback: File uploader (only if direct processing failed)
         if not audio_bytes:
