@@ -1434,110 +1434,113 @@ def show_testing_interface():
             audio_bytes = uploaded_audio.read()
             st.success("✅ Audio file received! Processing...")
         
-        # Fallback: File uploader (outside form) - REMOVED, using primary uploader above
-        
-        # SOLUTION 2: Two-step rerun process
-        # Step 1: Detect audio_submit param → Read from sessionStorage → Populate input → Trigger second rerun
+        # CRITICAL: Don't reset audio_bytes if file_uploader already set it!
+        # Only try other methods if file_uploader didn't provide audio
+        # Define audio_submit_key outside so it's available everywhere
         audio_submit_key = st.query_params.get('audio_submit')
         
-        if audio_submit_key == recording_key:
-            # First rerun: Read from sessionStorage and populate input, then trigger second rerun
-            read_audio_js = f"""
-            <script>
-            (function() {{
-                const audioData = sessionStorage.getItem('audio_{recording_key}');
-                if (audioData && audioData.length > 100) {{
-                    // Find the form input and populate it
-                    const form = document.querySelector('form[data-testid*="stForm"]');
-                    if (form) {{
-                        const inputs = form.querySelectorAll('input[type="text"]');
-                        for (let input of inputs) {{
-                            const container = input.closest('[data-testid*="stTextInput"]');
-                            if (container) {{
-                                const label = container.querySelector('label');
-                                if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                    input.value = audioData;
-                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    
-                                    // Store in session state
-                                    if (window.streamlit && window.streamlit.setComponentValue) {{
-                                        window.streamlit.setComponentValue(audioData);
+        if audio_bytes is None:
+            # SOLUTION 2: Two-step rerun process (fallback for direct recording)
+            # Step 1: Detect audio_submit param → Read from sessionStorage → Populate input → Trigger second rerun
+            
+            if audio_submit_key == recording_key:
+                # First rerun: Read from sessionStorage and populate input, then trigger second rerun
+                read_audio_js = f"""
+                <script>
+                (function() {{
+                    const audioData = sessionStorage.getItem('audio_{recording_key}');
+                    if (audioData && audioData.length > 100) {{
+                        // Find the form input and populate it
+                        const form = document.querySelector('form[data-testid*="stForm"]');
+                        if (form) {{
+                            const inputs = form.querySelectorAll('input[type="text"]');
+                            for (let input of inputs) {{
+                                const container = input.closest('[data-testid*="stTextInput"]');
+                                if (container) {{
+                                    const label = container.querySelector('label');
+                                    if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                        input.value = audioData;
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        
+                                        // Store in session state
+                                        if (window.streamlit && window.streamlit.setComponentValue) {{
+                                            window.streamlit.setComponentValue(audioData);
+                                        }}
+                                        
+                                        // Trigger second rerun to process
+                                        setTimeout(() => {{
+                                            // Remove audio_submit param and add audio_loaded param
+                                            const url = new URL(window.location.href);
+                                            url.searchParams.delete('audio_submit');
+                                            url.searchParams.set('audio_loaded', '{recording_key}');
+                                            url.searchParams.set('_t', Date.now());
+                                            window.location.href = url.toString();
+                                        }}, 200);
+                                        break;
                                     }}
-                                    
-                                    // Trigger second rerun to process
-                                    setTimeout(() => {{
-                                        // Remove audio_submit param and add audio_loaded param
-                                        const url = new URL(window.location.href);
-                                        url.searchParams.delete('audio_submit');
-                                        url.searchParams.set('audio_loaded', '{recording_key}');
-                                        url.searchParams.set('_t', Date.now());
-                                        window.location.href = url.toString();
-                                    }}, 200);
-                                    break;
                                 }}
                             }}
                         }}
                     }}
-                }}
-            }})();
-            </script>
-            """
-            components.html(read_audio_js, height=0)
-            st.info("⏳ Loading audio from recording...")
-        
-        # If audio was submitted, read from sessionStorage and process IMMEDIATELY
-        audio_bytes = None
-        uploaded_audio = None
-        
-        # Check for audio_loaded param FIRST (handles second rerun after JS populated input)
-        audio_loaded_key = st.query_params.get('audio_loaded')
-        if audio_loaded_key == recording_key:
-            if f'audio_loaded_{recording_key}' not in st.session_state:
-                st.session_state[f'audio_loaded_{recording_key}'] = True
-                # Clear the audio_submit flag to avoid re-entering first branch
-                if 'audio_submit' in st.query_params:
-                    st.query_params.pop('audio_submit', None)
-                st.rerun()
-        
-        # If audio_loaded flag is set, audio should be in input - process it
-        if f'audio_loaded_{recording_key}' in st.session_state:
-            # Read from the form input (already created above) - DON'T create duplicate
-            audio_base64_data = st.session_state.get(audio_base64_key, '')
+                }})();
+                </script>
+                """
+                components.html(read_audio_js, height=0)
+                st.info("⏳ Loading audio from recording...")
             
-            # Store in session state if we have data
-            if audio_base64_data and len(audio_base64_data) > 100:
-                st.session_state[audio_base64_key] = audio_base64_data
-            
-            # Process if we have audio data
-            if audio_base64_data and len(audio_base64_data) > 100:
-                try:
-                    import base64
-                    audio_bytes = base64.b64decode(audio_base64_data)
-                    uploaded_audio = type('obj', (object,), {
-                        'read': lambda: audio_bytes,
-                        'name': f'recording_{recording_key}.webm',
-                        'type': 'audio/webm'
-                    })()
-                    st.success("✅ Audio received! Processing...")
-                    # Clear sessionStorage
-                    clear_storage_js = f"""
-                    <script>
-                    sessionStorage.removeItem('audio_{recording_key}');
-                    sessionStorage.removeItem('audio_format_{recording_key}');
-                    sessionStorage.removeItem('audio_submit_{recording_key}');
-                    </script>
-                    """
-                    components.html(clear_storage_js, height=0)
-                except Exception as e:
-                    st.error(f"Error processing audio: {e}")
-                    st.code(str(e), language='text')
-                    audio_bytes = None
+            # If audio was submitted, read from sessionStorage and process IMMEDIATELY
+            uploaded_audio = None
         
-        # If audio was just submitted (first time), inject JS to load from sessionStorage
-        elif audio_submit_key == recording_key:
-            # First time - inject JS to read sessionStorage and populate input, then rerun
-            audio_loader_js = f"""
+        # Check for audio_loaded param (fallback for direct recording - only if file_uploader didn't provide audio)
+        if audio_bytes is None:
+            audio_loaded_key = st.query_params.get('audio_loaded')
+            if audio_loaded_key == recording_key:
+                if f'audio_loaded_{recording_key}' not in st.session_state:
+                    st.session_state[f'audio_loaded_{recording_key}'] = True
+                    # Clear the audio_submit flag to avoid re-entering first branch
+                    if 'audio_submit' in st.query_params:
+                        st.query_params.pop('audio_submit', None)
+                    st.rerun()
+            
+            # If audio_loaded flag is set, audio should be in input - process it
+            if f'audio_loaded_{recording_key}' in st.session_state:
+                # Read from the form input (already created above) - DON'T create duplicate
+                audio_base64_data = st.session_state.get(audio_base64_key, '')
+                
+                # Store in session state if we have data
+                if audio_base64_data and len(audio_base64_data) > 100:
+                    st.session_state[audio_base64_key] = audio_base64_data
+                
+                # Process if we have audio data
+                if audio_base64_data and len(audio_base64_data) > 100:
+                    try:
+                        import base64
+                        audio_bytes = base64.b64decode(audio_base64_data)
+                        uploaded_audio = type('obj', (object,), {
+                            'read': lambda: audio_bytes,
+                            'name': f'recording_{recording_key}.webm',
+                            'type': 'audio/webm'
+                        })()
+                        st.success("✅ Audio received! Processing...")
+                        # Clear sessionStorage
+                        clear_storage_js = f"""
+                        <script>
+                        sessionStorage.removeItem('audio_{recording_key}');
+                        sessionStorage.removeItem('audio_format_{recording_key}');
+                        sessionStorage.removeItem('audio_submit_{recording_key}');
+                        </script>
+                        """
+                        components.html(clear_storage_js, height=0)
+                    except Exception as e:
+                        st.error(f"Error processing audio: {e}")
+                        st.code(str(e), language='text')
+                        audio_bytes = None
+            
+            # If audio was just submitted (first time), inject JS to load from sessionStorage
+            elif audio_submit_key == recording_key:
+                # First time - inject JS to read sessionStorage and populate input, then rerun
+                audio_loader_js = f"""
             <script>
             (function() {{
                 const key = '{recording_key}';
@@ -1601,13 +1604,13 @@ def show_testing_interface():
             }})();
             </script>
             """
-            components.html(audio_loader_js, height=0)
-            st.info("⏳ Loading audio from sessionStorage...")
-            # Don't create duplicate input - the form input above already exists
-            # JS will populate it, then we'll read from session state on next rerun
+                components.html(audio_loader_js, height=0)
+                st.info("⏳ Loading audio from sessionStorage...")
+                # Don't create duplicate input - the form input above already exists
+                # JS will populate it, then we'll read from session state on next rerun
         
         # If we don't have audio yet, read from form input (already created above)
-        elif audio_bytes is None:
+        if audio_bytes is None:
             # Read from the form input - DON'T create duplicate
             audio_base64_data = st.session_state.get(audio_base64_key, '')
         
