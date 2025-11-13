@@ -1152,11 +1152,17 @@ def show_testing_interface():
                                         console.log('Direct parent access failed, using postMessage:', e);
                                     }}
                                     
-                                    // Fallback: Use URL parameter to trigger processing
-                                    const url = new URL(window.parent.location.href);
-                                    url.searchParams.set('audio_submit', key);
-                                    url.searchParams.set('audio_data', base64Audio.substring(0, 100)); // First 100 chars as identifier
-                                    window.parent.location.href = url.toString();
+                                    // Fallback: Use postMessage to communicate with parent
+                                    // Parent will handle the navigation
+                                    window.parent.postMessage({{
+                                        type: 'streamlit:audio_ready',
+                                        key: key,
+                                        action: 'submit'
+                                    }}, '*');
+                                    
+                                    // Show success message - parent will handle submission
+                                    submitBtn.textContent = '✅ Audio ready! Processing...';
+                                    submitBtn.style.background = '#28a745';
                                     return;
                                 }}
                                 
@@ -1195,14 +1201,37 @@ def show_testing_interface():
                                     throw new Error('Form submit button not found');
                                 }}
                             }} catch (error) {{
-                                // Last resort: store in sessionStorage and reload with flag
+                                // Last resort: store in sessionStorage and use postMessage
                                 sessionStorage.setItem('audio_' + key, base64Audio);
-                                const url = new URL(window.location.href);
-                                url.searchParams.set('audio_submit', key);
                                 if (window.parent && window.parent !== window) {{
-                                    window.parent.location.href = url.toString();
+                                    window.parent.postMessage({{
+                                        type: 'streamlit:audio_ready',
+                                        key: key,
+                                        action: 'submit'
+                                    }}, '*');
                                 }} else {{
-                                    window.location.href = url.toString();
+                                    // Not in iframe - try direct form access
+                                    const form = document.querySelector('form[data-testid*="stForm"]');
+                                    if (form) {{
+                                        const inputs = form.querySelectorAll('input[type="text"]');
+                                        for (let input of inputs) {{
+                                            const container = input.closest('[data-testid*="stTextInput"]');
+                                            if (container) {{
+                                                const label = container.querySelector('label');
+                                                if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                                    input.value = base64Audio;
+                                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                                    
+                                                    const submitBtn = form.querySelector('button[type="submit"]');
+                                                    if (submitBtn) {{
+                                                        setTimeout(() => submitBtn.click(), 100);
+                                                    }}
+                                                    break;
+                                                }}
+                                            }}
+                                        }}
+                                    }}
                                 }}
                             }}
                             
