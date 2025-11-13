@@ -851,7 +851,7 @@ def show_testing_interface():
         # Initialize attempt tracking for this crop
         crop_index = st.session_state.current_test_index
         
-        # Check if user wants to increment attempt (from "Record Again" button)
+        # Check if user wants to increment attempt (from auto-advance or "Record Again" button)
         if st.query_params.get('increment_attempt') == 'true':
             current_attempt_num = st.session_state.current_attempt.get(crop_index, 1)
             if current_attempt_num < 5:
@@ -865,6 +865,20 @@ def show_testing_interface():
                     if key in st.session_state:
                         del st.session_state[key]
             st.query_params.pop('increment_attempt', None)
+            st.rerun()
+        
+        # Check if user wants to move to next crop (from auto-advance)
+        if st.query_params.get('next_crop') == 'true':
+            if crop_index + 1 < len(st.session_state.test_data):
+                st.session_state.current_test_index = crop_index + 1
+                # Reset attempt for new crop
+                if crop_index + 1 not in st.session_state.current_attempt:
+                    st.session_state.current_attempt[crop_index + 1] = 1
+                # Clear all state for old crop
+                for key in list(st.session_state.keys()):
+                    if key.startswith(f'recording_{crop_index}_'):
+                        del st.session_state[key]
+            st.query_params.pop('next_crop', None)
             st.rerun()
         
         current_attempt_num = st.session_state.current_attempt.get(crop_index, 1)
@@ -1793,59 +1807,43 @@ def show_testing_interface():
                     else:
                         st.success(f"✅ Result saved! Total: {len(st.session_state.test_results)}")
             
-            # AUTO-ADVANCE like Flask (after showing results)
+            # AUTO-ADVANCE like Flask (automatic, no button clicks needed)
             st.markdown("---")
             if result.get('transcript'):
                 if current_attempt_num < max_attempts:
-                    # More attempts remaining - show buttons to continue
-                    st.info(f"✅ Result saved! Continue with attempt {current_attempt_num + 1}/{max_attempts}")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button(f"➡️ Continue to Attempt {current_attempt_num + 1}", type="primary", key=f"continue_attempt_{recording_key}", use_container_width=True):
-                            # Move to next attempt
-                            st.session_state.current_attempt[crop_index] = current_attempt_num + 1
-                            # Clear this attempt's state
-                            result_saved_key = f'result_saved_{recording_key}'
-                            keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
-                                           f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.rerun()
-                    with col2:
-                        if st.button("🔄 Record Again", type="secondary", key=f"record_again_streamlit_{recording_key}", use_container_width=True):
-                            # Increment attempt and clear state
-                            if current_attempt_num < max_attempts:
-                                st.session_state.current_attempt[crop_index] = current_attempt_num + 1
-                            result_saved_key = f'result_saved_{recording_key}'
-                            # Clear all state for this attempt
-                            keys_to_clear = [f'audio_upload_{recording_key}', f'audio_processed_{recording_key}', 
-                                           f'asr_result_{recording_key}', audio_submitted_key, result_saved_key]
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.rerun()
+                    # More attempts remaining - AUTO-ADVANCE after 2 seconds
+                    st.info(f"✅ Result saved! Auto-advancing to attempt {current_attempt_num + 1}/{max_attempts} in 2 seconds...")
+                    
+                    # Auto-advance after delay
+                    auto_advance_js = f"""
+                    <script>
+                    setTimeout(function() {{
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('increment_attempt', 'true');
+                        url.searchParams.set('_t', Date.now());
+                        window.location.href = url.toString();
+                    }}, 2000);
+                    </script>
+                    """
+                    components.html(auto_advance_js, height=0)
                 else:
-                    # All attempts done - show button to move to next crop
-                    st.info("✅ All 5 attempts completed for this crop!")
+                    # All attempts done - AUTO-ADVANCE to next crop after 3 seconds
+                    st.info("✅ All 5 attempts completed! Auto-advancing to next crop in 3 seconds...")
+                    
                     if crop_index + 1 < len(st.session_state.test_data):
-                        if st.button("➡️ Next Crop", type="primary", key=f"next_crop_{recording_key}", use_container_width=True):
-                            # Move to next crop
-                            st.session_state.current_test_index = crop_index + 1
-                            # Reset attempt for new crop
-                            if crop_index + 1 not in st.session_state.current_attempt:
-                                st.session_state.current_attempt[crop_index + 1] = 1
-                            # Clear all state
-                            for key in list(st.session_state.keys()):
-                                if 'recording_' in key or 'audio_' in key:
-                                    del st.session_state[key]
-                            st.rerun()
+                        auto_next_crop_js = f"""
+                        <script>
+                        setTimeout(function() {{
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('next_crop', 'true');
+                            url.searchParams.set('_t', Date.now());
+                            window.location.href = url.toString();
+                        }}, 3000);
+                        </script>
+                        """
+                        components.html(auto_next_crop_js, height=0)
                     else:
-                        # All crops done - go to results
-                        st.success("🎉 All crops completed!")
-                        if st.button("📊 View Results & Download CSV", type="primary", key=f"view_results_{recording_key}", use_container_width=True):
-                            st.session_state.show_results = True
-                            st.rerun()
+                        st.success("🎉 All crops completed! Check results below.")
             else:
                 # Show specific error if available
                 error_msg = result.get('error', 'Unknown error')
