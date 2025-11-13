@@ -1111,45 +1111,99 @@ def show_testing_interface():
                             // Store in sessionStorage as backup
                             sessionStorage.setItem('audio_' + key, base64Audio);
                             
-                            // Find the hidden input in the form - SIMPLE DIRECT APPROACH
-                            const form = document.querySelector('form[data-testid*="stForm"]');
-                            if (!form) {{
-                                throw new Error('Form not found');
-                            }}
-                            
-                            const inputs = form.querySelectorAll('input[type="text"]');
-                            let targetInput = null;
-                            
-                            // Find the hidden input (should be the first one with collapsed label)
-                            for (let input of inputs) {{
-                                const container = input.closest('[data-testid*="stTextInput"]');
-                                if (container) {{
-                                    const label = container.querySelector('label');
-                                    if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                        targetInput = input;
-                                        break;
+                            // CRITICAL: We're in an iframe, so we need to access parent window
+                            // Use postMessage to communicate with parent Streamlit page
+                            try {{
+                                // Try to access parent window directly first
+                                if (window.parent && window.parent !== window) {{
+                                    // We're in an iframe - use postMessage
+                                    window.parent.postMessage({{
+                                        type: 'streamlit:audio_submit',
+                                        key: key,
+                                        audioData: base64Audio
+                                    }}, '*');
+                                    
+                                    // Also try direct access (might work if same origin)
+                                    try {{
+                                        const parentDoc = window.parent.document;
+                                        const form = parentDoc.querySelector('form[data-testid*="stForm"]');
+                                        if (form) {{
+                                            const inputs = form.querySelectorAll('input[type="text"]');
+                                            for (let input of inputs) {{
+                                                const container = input.closest('[data-testid*="stTextInput"]');
+                                                if (container) {{
+                                                    const label = container.querySelector('label');
+                                                    if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                                        input.value = base64Audio;
+                                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                                        
+                                                        // Click submit button
+                                                        const submitBtn = form.querySelector('button[type="submit"]');
+                                                        if (submitBtn) {{
+                                                            setTimeout(() => submitBtn.click(), 50);
+                                                            return;
+                                                        }}
+                                                    }}
+                                                }}
+                                            }}
+                                        }}
+                                    }} catch (e) {{
+                                        console.log('Direct parent access failed, using postMessage:', e);
+                                    }}
+                                    
+                                    // Fallback: Use URL parameter to trigger processing
+                                    const url = new URL(window.parent.location.href);
+                                    url.searchParams.set('audio_submit', key);
+                                    url.searchParams.set('audio_data', base64Audio.substring(0, 100)); // First 100 chars as identifier
+                                    window.parent.location.href = url.toString();
+                                    return;
+                                }}
+                                
+                                // Not in iframe - direct access
+                                const form = document.querySelector('form[data-testid*="stForm"]');
+                                if (!form) {{
+                                    throw new Error('Form not found');
+                                }}
+                                
+                                const inputs = form.querySelectorAll('input[type="text"]');
+                                let targetInput = null;
+                                
+                                for (let input of inputs) {{
+                                    const container = input.closest('[data-testid*="stTextInput"]');
+                                    if (container) {{
+                                        const label = container.querySelector('label');
+                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                            targetInput = input;
+                                            break;
+                                        }}
                                     }}
                                 }}
-                            }}
-                            
-                            if (!targetInput) {{
-                                throw new Error('Audio input not found in form');
-                            }}
-                            
-                            // Populate input
-                            targetInput.value = base64Audio;
-                            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            
-                            // IMMEDIATELY click form submit button (like Flask POST)
-                            const formSubmitBtn = form.querySelector('button[type="submit"]');
-                            if (formSubmitBtn) {{
-                                // Small delay to ensure input value is registered
-                                setTimeout(() => {{
-                                    formSubmitBtn.click();
-                                }}, 50);
-                            }} else {{
-                                throw new Error('Form submit button not found');
+                                
+                                if (!targetInput) {{
+                                    throw new Error('Audio input not found in form');
+                                }}
+                                
+                                targetInput.value = base64Audio;
+                                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                
+                                const formSubmitBtn = form.querySelector('button[type="submit"]');
+                                if (formSubmitBtn) {{
+                                    setTimeout(() => formSubmitBtn.click(), 50);
+                                }} else {{
+                                    throw new Error('Form submit button not found');
+                                }}
+                            }} catch (error) {{
+                                // Last resort: store in sessionStorage and reload with flag
+                                sessionStorage.setItem('audio_' + key, base64Audio);
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('audio_submit', key);
+                                if (window.parent && window.parent !== window) {{
+                                    window.parent.location.href = url.toString();
+                                }} else {{
+                                    window.location.href = url.toString();
+                                }}
                             }}
                             
                         }} catch (error) {{
@@ -1383,8 +1437,47 @@ def show_testing_interface():
         
         # Fallback: File uploader (outside form)
         
-        # Check if audio was submitted (via URL parameter)
+        # Check if audio was submitted (via URL parameter from iframe)
         audio_submit_key = st.query_params.get('audio_submit')
+        
+        # CRITICAL: If audio_submit param is set, read from sessionStorage immediately
+        if audio_submit_key == recording_key:
+            # Inject JS to read from sessionStorage and populate input
+            read_audio_js = f"""
+            <script>
+            (function() {{
+                const audioData = sessionStorage.getItem('audio_{recording_key}');
+                if (audioData && audioData.length > 100) {{
+                    // Find the form input and populate it
+                    const form = document.querySelector('form[data-testid*="stForm"]');
+                    if (form) {{
+                        const inputs = form.querySelectorAll('input[type="text"]');
+                        for (let input of inputs) {{
+                            const container = input.closest('[data-testid*="stTextInput"]');
+                            if (container) {{
+                                const label = container.querySelector('label');
+                                if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                    input.value = audioData;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    
+                                    // Auto-submit the form
+                                    setTimeout(() => {{
+                                        const submitBtn = form.querySelector('button[type="submit"]');
+                                        if (submitBtn) {{
+                                            submitBtn.click();
+                                        }}
+                                    }}, 100);
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }})();
+            </script>
+            """
+            components.html(read_audio_js, height=0)
         
         # If audio was submitted, read from sessionStorage and process IMMEDIATELY
         audio_bytes = None
