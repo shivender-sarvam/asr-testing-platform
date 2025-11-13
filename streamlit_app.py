@@ -1656,73 +1656,39 @@ def show_testing_interface():
                     
                     if uploaded_audio.name.endswith('.webm'):
                         # CRITICAL: Flask ALWAYS sends WAV - we must convert too!
-                        # Use ffmpeg via subprocess (like Flask does) - more reliable than pydub
+                        # API may not accept webm format
+                        # Use librosa (works without pyaudioop, unlike pydub)
+                        conversion_success = False
+                        
+                        # Try librosa first (most reliable, no pyaudioop dependency)
                         try:
                             with debug_expander:
                                 st.write("**Step 2.1: Attempting WebM → WAV Conversion (REQUIRED)**")
+                                st.write("**Method 1: Using librosa (recommended)**")
+                            import librosa
+                            import soundfile as sf
+                            import io
+                            import numpy as np
                             
-                            import subprocess
-                            import tempfile
-                            import os
+                            # Load audio with librosa (can read webm)
+                            audio_data, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
                             
-                            # Create temporary files
-                            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as webm_file:
-                                webm_file.write(audio_bytes)
-                                webm_path = webm_file.name
-                            
-                            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_file:
-                                wav_path = wav_file.name
-                            
-                            try:
-                                # Use ffmpeg to convert (same as Flask approach)
-                                # Convert to 16kHz mono WAV (API requirement)
-                                ffmpeg_cmd = [
-                                    'ffmpeg',
-                                    '-i', webm_path,
-                                    '-ar', '16000',  # Sample rate: 16kHz
-                                    '-ac', '1',      # Channels: mono
-                                    '-y',            # Overwrite output
-                                    wav_path
-                                ]
-                                
-                                with debug_expander:
-                                    st.code(f"Running: {' '.join(ffmpeg_cmd)}", language='bash')
-                                
-                                result = subprocess.run(
-                                    ffmpeg_cmd,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=30
-                                )
-                                
-                                if result.returncode == 0:
-                                    # Read converted WAV file
-                                    with open(wav_path, 'rb') as f:
-                                        audio_bytes = f.read()
-                                    audio_format = 'wav'
-                                    conversion_status = "✅ Successfully converted webm → wav using ffmpeg"
-                                    st.success("✅ Converted webm to wav successfully!")
-                                    with debug_expander:
-                                        st.success(f"✅ Conversion successful!\nOriginal size: {len(audio_bytes)} bytes\nNew size: {len(audio_bytes)} bytes")
-                                else:
-                                    raise Exception(f"ffmpeg failed: {result.stderr}")
-                                    
-                            finally:
-                                # Clean up temp files
-                                try:
-                                    os.unlink(webm_path)
-                                except:
-                                    pass
-                                try:
-                                    os.unlink(wav_path)
-                                except:
-                                    pass
-                                
-                        except FileNotFoundError:
-                            # ffmpeg not found - try pydub as fallback
+                            # Convert to WAV bytes
+                            wav_buffer = io.BytesIO()
+                            sf.write(wav_buffer, audio_data, 16000, format='WAV')
+                            wav_buffer.seek(0)  # Reset to beginning
+                            audio_bytes = wav_buffer.getvalue()
+                            audio_format = 'wav'
+                            conversion_status = "✅ Successfully converted webm → wav using librosa"
+                            conversion_success = True
+                            st.success("✅ Converted webm to wav successfully!")
+                            with debug_expander:
+                                st.success(f"✅ Conversion successful using librosa!\nOriginal size: {len(audio_bytes)} bytes\nSample rate: 16000 Hz\nChannels: Mono")
+                        except (ImportError, Exception) as e1:
+                            # librosa failed - try pydub as fallback
                             try:
                                 with debug_expander:
-                                    st.write("**Step 2.1.1: ffmpeg not found, trying pydub...**")
+                                    st.write("**Method 2: Trying pydub (fallback)**")
                                 from pydub import AudioSegment
                                 import io
                                 audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
@@ -1732,27 +1698,25 @@ def show_testing_interface():
                                 audio_bytes = wav_buffer.getvalue()
                                 audio_format = 'wav'
                                 conversion_status = "✅ Successfully converted webm → wav using pydub"
+                                conversion_success = True
                                 st.success("✅ Converted webm to wav successfully!")
-                            except Exception as e2:
+                                with debug_expander:
+                                    st.success(f"✅ Conversion successful using pydub!\nOriginal size: {len(audio_bytes)} bytes")
+                            except (ImportError, Exception) as e2:
                                 # Both methods failed
-                                error_msg = f"❌ CRITICAL: Failed to convert webm to wav!\n\nBoth ffmpeg and pydub failed.\n\nffmpeg error: Not found\npydub error: {str(e2)}\n\nFlask app ALWAYS sends WAV format. The API may not accept webm."
+                                error_msg = f"❌ CRITICAL: Failed to convert webm to wav!\n\nBoth librosa and pydub failed.\n\nlibrosa error: {str(e1)}\npydub error: {str(e2)}\n\nFlask app ALWAYS sends WAV format. The API may not accept webm.\n\nPlease ensure librosa or pydub is installed."
                                 st.error(error_msg)
                                 with debug_expander:
-                                    st.error(f"❌ Conversion FAILED\nffmpeg: Not found\npydub: {str(e2)}\n\nThis is a CRITICAL error - Flask always converts to WAV before sending to API.")
+                                    st.error(f"❌ Conversion FAILED\nlibrosa: {str(e1)}\npydub: {str(e2)}\n\nThis is a CRITICAL error - Flask always converts to WAV before sending to API.")
                                 # Still try to send as webm, but warn user
                                 audio_format = 'webm'
-                                conversion_status = f"❌ FAILED - Using webm (may not work!)\nffmpeg: Not found\npydub: {str(e2)}"
+                                conversion_status = f"❌ FAILED - Using webm (may not work!)\nlibrosa: {str(e1)}\npydub: {str(e2)}"
                                 st.warning("⚠️ WARNING: Sending as webm format - API may reject this!")
-                        except Exception as e:
-                            # ffmpeg failed for other reason
-                            error_msg = f"❌ CRITICAL: Failed to convert webm to wav!\n\nffmpeg conversion failed.\n\nError: {str(e)}\n\nFlask app ALWAYS sends WAV format. The API may not accept webm."
-                            st.error(error_msg)
-                            with debug_expander:
-                                st.error(f"❌ Conversion FAILED\nReason: {str(e)}\n\nThis is a CRITICAL error - Flask always converts to WAV before sending to API.")
-                            # Still try to send as webm, but warn user
-                            audio_format = 'webm'
-                            conversion_status = f"❌ FAILED - Using webm (may not work!)\nReason: {str(e)}"
-                            st.warning("⚠️ WARNING: Sending as webm format - API may reject this!")
+                        
+                        if not conversion_success:
+                            # Don't proceed if conversion failed - this will cause API timeout
+                            st.error("❌ **BLOCKING ERROR: Cannot proceed without WAV conversion. Please check dependencies.**")
+                            st.stop()
                     
                     # Store conversion status for debugging
                     st.session_state[f'_conversion_status_{recording_key}'] = conversion_status
