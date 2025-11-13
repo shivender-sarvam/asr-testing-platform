@@ -1098,7 +1098,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - SOLUTION 2: Store in sessionStorage + URL param to trigger rerun
+                    // Submit button handler - SURESHOT APPROACH: Auto-download file for file_uploader
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1106,52 +1106,53 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Processing...';
+                        submitBtn.textContent = '⏳ Preparing...';
                         
                         try {{
-                            // Convert blob to base64
+                            // SURESHOT: Auto-download the blob as a file
+                            // User will upload it via file_uploader (most reliable method)
+                            const url = URL.createObjectURL(audioBlob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `recording_{recording_key}.webm`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            
+                            // Also store in sessionStorage as backup
                             const reader = new FileReader();
-                            const base64Promise = new Promise((resolve, reject) => {{
-                                reader.onload = () => {{
-                                    const base64 = reader.result.split(',')[1];
-                                    resolve(base64);
-                                }};
-                                reader.onerror = reject;
-                            }});
-                            
+                            reader.onload = () => {{
+                                const base64 = reader.result.split(',')[1];
+                                sessionStorage.setItem('audio_' + key, base64);
+                            }};
                             reader.readAsDataURL(audioBlob);
-                            const base64Audio = await base64Promise;
                             
-                            // Store in sessionStorage (accessible from parent window)
-                            sessionStorage.setItem('audio_' + key, base64Audio);
+                            // Show success message
+                            submitBtn.textContent = '✅ File downloaded! Upload it below';
+                            submitBtn.style.background = '#28a745';
                             
-                            // Use postMessage to communicate with parent (no navigation needed)
-                            // Parent will detect the message and trigger rerun
-                            if (window.parent && window.parent !== window) {{
-                                window.parent.postMessage({{
-                                    type: 'streamlit:audio_submit',
-                                    key: key
-                                }}, '*');
-                                
-                                // Also try to trigger rerun via Streamlit API if available
-                                try {{
-                                    if (window.parent.streamlit && window.parent.streamlit.rerun) {{
-                                        window.parent.streamlit.rerun();
+                            // Scroll to file uploader section
+                            setTimeout(() => {{
+                                // Try to find and scroll to upload section
+                                const uploadSection = document.querySelector('[data-testid*="stFileUploader"]');
+                                if (uploadSection) {{
+                                    uploadSection.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                                }} else {{
+                                    // Fallback: scroll to any element with "Upload" text
+                                    const elements = Array.from(document.querySelectorAll('*'));
+                                    for (let el of elements) {{
+                                        if (el.textContent && el.textContent.includes('Upload')) {{
+                                            el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                                            break;
+                                        }}
                                     }}
-                                }} catch(e) {{
-                                    console.log('Streamlit rerun not available, using postMessage');
                                 }}
-                            }} else {{
-                                // Not in iframe - use URL param
-                                const url = new URL(window.location.href);
-                                url.searchParams.set('audio_submit', key);
-                                url.searchParams.set('_t', Date.now());
-                                window.location.href = url.toString();
-                            }}
+                            }}, 300);
                             
                         }} catch (error) {{
-                            console.error('Error submitting audio:', error);
-                            alert('Error submitting audio: ' + error.message);
+                            console.error('Error preparing audio:', error);
+                            alert('Error preparing audio: ' + error.message);
                             submitBtn.disabled = false;
                             submitBtn.textContent = '📤 Submit Recording';
                             submitBtn.style.background = '#007bff';
@@ -1709,6 +1710,48 @@ def show_testing_interface():
                             'transcript': asr_transcript,
                             'matches': matches
                         }
+                        
+                        # SAVE AUDIO TO BLOB STORAGE (as requested)
+                        if AZURE_AVAILABLE:
+                            try:
+                                from azure.storage.blob import BlobServiceClient, ContentSettings
+                                from azure_service import get_azure_config
+                                
+                                account_name, container_name, account_key = get_azure_config()
+                                if account_key:
+                                    connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
+                                    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+                                    
+                                    # Create folder structure: audio_recordings/{user_email}/{session_id}/{crop_name}/
+                                    user_email = st.session_state.user_info.get('email', 'unknown@example.com') if st.session_state.user_info else 'unknown@example.com'
+                                    session_id = st.session_state.session_id
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    blob_path = f"audio_recordings/{user_email}/{session_id}/{crop_name}/recording_{current_attempt_num}_{timestamp}.webm"
+                                    
+                                    # Upload audio file
+                                    container_client = blob_service_client.get_container_client(container_name)
+                                    blob_client = container_client.get_blob_client(blob_path)
+                                    
+                                    # Read original audio bytes (before conversion if webm was converted)
+                                    original_audio_bytes = audio_bytes
+                                    if uploaded_audio:
+                                        # Reset file pointer and read original
+                                        uploaded_audio.seek(0)
+                                        original_audio_bytes = uploaded_audio.read()
+                                    
+                                    blob_client.upload_blob(
+                                        original_audio_bytes,
+                                        overwrite=True,
+                                        content_settings=ContentSettings(content_type="audio/webm")
+                                    )
+                                    
+                                    audio_blob_url = f"https://{account_name}.blob.core.windows.net/{container_name}/{blob_path}"
+                                    st.session_state[f'audio_blob_url_{recording_key}'] = audio_blob_url
+                                    with debug_expander:
+                                        st.success(f"✅ Audio saved to blob storage: {blob_path}")
+                            except Exception as e:
+                                with debug_expander:
+                                    st.warning(f"⚠️ Could not save audio to blob storage: {e}")
                     else:
                         # ASR failed - call_sarvam_asr will have shown the actual error
                         st.session_state[f'asr_result_{recording_key}'] = {
