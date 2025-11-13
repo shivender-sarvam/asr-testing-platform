@@ -1231,17 +1231,14 @@ def show_testing_interface():
             # Render the audio recorder
             components.html(audio_recorder_html, height=300)
             
-            # Submit button
-            submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
-            
-            if submitted:
-                # SIMPLE: Read from sessionStorage directly (like Flask reads from FormData)
-                # Inject JS to read from sessionStorage and store in Python variable
-                read_audio_js = f"""
-                <script>
+            # CRITICAL: Read from sessionStorage on EVERY rerun (not just on submit)
+            # This ensures audio is available when form is submitted
+            read_audio_js = f"""
+            <script>
+            (function() {{
                 const audioData = sessionStorage.getItem('audio_{recording_key}');
-                if (audioData) {{
-                    // Store in a way Python can access - use a hidden input
+                if (audioData && audioData.length > 100) {{
+                    // Populate the hidden input immediately
                     const form = document.querySelector('form[data-testid*="stForm"]');
                     if (form) {{
                         const inputs = form.querySelectorAll('input[type="text"]');
@@ -1250,25 +1247,64 @@ def show_testing_interface():
                             if (container) {{
                                 const label = container.querySelector('label');
                                 if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                    input.value = audioData;
-                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    if (input.value !== audioData) {{
+                                        input.value = audioData;
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    }}
                                     break;
                                 }}
                             }}
                         }}
                     }}
                 }}
-                </script>
-                """
-                components.html(read_audio_js, height=0)
-                
-                # Read from session state (where JS just stored it)
+            }})();
+            </script>
+            """
+            components.html(read_audio_js, height=0)
+            
+            # Submit button
+            submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
+            
+            if submitted:
+                # Read from session state (populated by JS above)
                 audio_data = st.session_state.get(audio_base64_key, '')
                 
                 # Also try widget value
                 if (not audio_data or len(audio_data) < 100) and audio_base64_data:
                     audio_data = audio_base64_data
+                
+                # Last resort: read from sessionStorage via another injection
+                if not audio_data or len(audio_data) < 100:
+                    # Force read from sessionStorage
+                    force_read_js = f"""
+                    <script>
+                    const audioData = sessionStorage.getItem('audio_{recording_key}');
+                    if (audioData) {{
+                        console.log('Force reading audio from sessionStorage, length:', audioData.length);
+                        // Store in session state for Python
+                        const form = document.querySelector('form[data-testid*="stForm"]');
+                        if (form) {{
+                            const inputs = form.querySelectorAll('input[type="text"]');
+                            for (let input of inputs) {{
+                                const container = input.closest('[data-testid*="stTextInput"]');
+                                if (container) {{
+                                    const label = container.querySelector('label');
+                                    if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                        input.value = audioData;
+                                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        break;
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                    </script>
+                    """
+                    components.html(force_read_js, height=0)
+                    # Re-read after JS injection
+                    audio_data = st.session_state.get(audio_base64_key, '')
                 
                 # Process audio if we have it
                 if audio_data and len(audio_data) > 100:
