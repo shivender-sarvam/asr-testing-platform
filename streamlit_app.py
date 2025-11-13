@@ -877,6 +877,9 @@ def show_testing_interface():
         recording_key = f"recording_{crop_index}_attempt_{current_attempt_num}"
         audio_submitted_key = f"audio_submitted_{recording_key}"
         
+        # CRITICAL: Define audio_base64_key BEFORE the form so it's always available
+        audio_base64_key = f"audio_base64_{recording_key}"
+        
         # Audio Recording Component - COMPLETE REWRITE
         st.markdown("### 🎤 Record Audio")
         
@@ -884,7 +887,6 @@ def show_testing_interface():
         with st.form(key=f"audio_form_{recording_key}", clear_on_submit=False):
             # Hidden input for base64 audio (populated by JavaScript)
             # Put it FIRST so it's rendered before the recorder
-            audio_base64_key = f"audio_base64_{recording_key}"
             audio_base64_data = st.text_input(
                 "Audio Data",
                 key=audio_base64_key,
