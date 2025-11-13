@@ -884,13 +884,15 @@ def show_testing_interface():
         st.markdown("### 🎤 Record Audio")
         
         # Use Streamlit form for reliable submission
+        # CRITICAL: Ensure form key is unique and input is only created here
         with st.form(key=f"audio_form_{recording_key}", clear_on_submit=False):
             # Hidden input for base64 audio (populated by JavaScript)
             # Put it FIRST so it's rendered before the recorder
+            # THIS IS THE ONLY PLACE WHERE WE CREATE THIS INPUT
             audio_base64_data = st.text_input(
                 "Audio Data",
                 key=audio_base64_key,
-                value="",
+                value=st.session_state.get(audio_base64_key, ""),
                 label_visibility="collapsed",
                 help="Hidden input for audio data"
             )
