@@ -1084,8 +1084,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - SIMPLE: Just store in sessionStorage
-                    // User will click "Submit & Process" button to process
+                    // Submit button handler - SOLUTION 1: Download blob as file, trigger file_uploader
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1096,25 +1095,35 @@ def show_testing_interface():
                         submitBtn.textContent = '⏳ Preparing...';
                         
                         try {{
-                            // Convert blob to base64 (like Flask FormData)
+                            // SOLUTION 1: Download blob as file, then trigger file_uploader
+                            const url = URL.createObjectURL(audioBlob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `recording_{recording_key}.webm`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            
+                            // Also store in sessionStorage as backup
                             const reader = new FileReader();
-                            const base64Promise = new Promise((resolve, reject) => {{
-                                reader.onload = () => {{
-                                    const base64 = reader.result.split(',')[1];
-                                    resolve(base64);
-                                }};
-                                reader.onerror = reject;
-                            }});
-                            
+                            reader.onload = () => {{
+                                const base64 = reader.result.split(',')[1];
+                                sessionStorage.setItem('audio_' + key, base64);
+                            }};
                             reader.readAsDataURL(audioBlob);
-                            const base64Audio = await base64Promise;
                             
-                            // Store in sessionStorage (accessible from parent window)
-                            sessionStorage.setItem('audio_' + key, base64Audio);
-                            
-                            // Show success - user clicks "Submit & Process" button
-                            submitBtn.textContent = '✅ Ready! Click "Submit & Process" below';
+                            // Show message to user
+                            submitBtn.textContent = '✅ File downloaded! Upload it below';
                             submitBtn.style.background = '#28a745';
+                            
+                            // Scroll to file uploader
+                            setTimeout(() => {{
+                                const uploadSection = document.querySelector('[data-testid*="stFileUploader"]');
+                                if (uploadSection) {{
+                                    uploadSection.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                                }}
+                            }}, 500);
                             
                         }} catch (error) {{
                             console.error('Error preparing audio:', error);
@@ -1408,7 +1417,22 @@ def show_testing_interface():
                 else:
                     st.warning("⚠️ No audio data found. Please record audio first.")
         
-        # Fallback: File uploader (outside form)
+        # SOLUTION 1: Use file_uploader as PRIMARY method (not fallback)
+        # This works because Streamlit reads files directly, no timing issues
+        st.markdown("### 📤 Upload Audio")
+        uploaded_audio = st.file_uploader(
+            "Upload your recorded audio",
+            type=['webm', 'wav', 'mp3'],
+            key=f"audio_upload_{recording_key}",
+            help="After recording, click 'Submit Recording' above to download the file, then upload it here"
+        )
+        
+        audio_bytes = None
+        if uploaded_audio is not None:
+            audio_bytes = uploaded_audio.read()
+            st.success("✅ Audio file received! Processing...")
+        
+        # Fallback: File uploader (outside form) - REMOVED, using primary uploader above
         
         # Check if audio was submitted (via URL parameter from iframe)
         audio_submit_key = st.query_params.get('audio_submit')
@@ -1577,18 +1601,8 @@ def show_testing_interface():
             # Read from the form input - DON'T create duplicate
             audio_base64_data = st.session_state.get(audio_base64_key, '')
         
-        # Fallback: File uploader (only if direct processing failed)
-        if not audio_bytes:
-            uploaded_audio = st.file_uploader(
-                "Upload audio (fallback only)",
-                type=['webm', 'wav', 'mp3'],
-                key=f"audio_upload_{recording_key}",
-                help="Only use if direct processing doesn't work"
-            )
-            
-            if uploaded_audio is not None:
-                audio_bytes = uploaded_audio.read()
-                st.success("✅ Audio file received!")
+        # Process audio from file_uploader (PRIMARY METHOD - Solution 1)
+        if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
         
         # Process audio when uploaded (EXACT FLASK WORKFLOW)
         if audio_bytes and not st.session_state.get(f'audio_processed_{recording_key}', False):
