@@ -1084,7 +1084,7 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - SOLUTION 1: Download blob as file, trigger file_uploader
+                    // Submit button handler - SOLUTION 2: Store in sessionStorage + URL param to trigger rerun
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1092,42 +1092,42 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Preparing...';
+                        submitBtn.textContent = '⏳ Processing...';
                         
                         try {{
-                            // SOLUTION 1: Download blob as file, then trigger file_uploader
-                            const url = URL.createObjectURL(audioBlob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `recording_{recording_key}.webm`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            
-                            // Also store in sessionStorage as backup
+                            // Convert blob to base64
                             const reader = new FileReader();
-                            reader.onload = () => {{
-                                const base64 = reader.result.split(',')[1];
-                                sessionStorage.setItem('audio_' + key, base64);
-                            }};
+                            const base64Promise = new Promise((resolve, reject) => {{
+                                reader.onload = () => {{
+                                    const base64 = reader.result.split(',')[1];
+                                    resolve(base64);
+                                }};
+                                reader.onerror = reject;
+                            }});
+                            
                             reader.readAsDataURL(audioBlob);
+                            const base64Audio = await base64Promise;
                             
-                            // Show message to user
-                            submitBtn.textContent = '✅ File downloaded! Upload it below';
-                            submitBtn.style.background = '#28a745';
+                            // Store in sessionStorage (accessible from parent window)
+                            sessionStorage.setItem('audio_' + key, base64Audio);
                             
-                            // Scroll to file uploader
-                            setTimeout(() => {{
-                                const uploadSection = document.querySelector('[data-testid*="stFileUploader"]');
-                                if (uploadSection) {{
-                                    uploadSection.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                                }}
-                            }}, 500);
+                            // Trigger Streamlit rerun with URL parameter
+                            // This tells Python to read from sessionStorage
+                            const currentUrl = window.location.href;
+                            const url = new URL(currentUrl);
+                            url.searchParams.set('audio_submit', key);
+                            url.searchParams.set('_t', Date.now()); // Force reload
+                            
+                            // Navigate parent window (we're in iframe)
+                            if (window.parent && window.parent !== window) {{
+                                window.parent.location.href = url.toString();
+                            }} else {{
+                                window.location.href = url.toString();
+                            }}
                             
                         }} catch (error) {{
-                            console.error('Error preparing audio:', error);
-                            alert('Error preparing audio: ' + error.message);
+                            console.error('Error submitting audio:', error);
+                            alert('Error submitting audio: ' + error.message);
                             submitBtn.disabled = false;
                             submitBtn.textContent = '📤 Submit Recording';
                             submitBtn.style.background = '#007bff';
@@ -1434,12 +1434,12 @@ def show_testing_interface():
         
         # Fallback: File uploader (outside form) - REMOVED, using primary uploader above
         
-        # Check if audio was submitted (via URL parameter from iframe)
+        # SOLUTION 2: Two-step rerun process
+        # Step 1: Detect audio_submit param → Read from sessionStorage → Populate input → Trigger second rerun
         audio_submit_key = st.query_params.get('audio_submit')
         
-        # CRITICAL: If audio_submit param is set, read from sessionStorage immediately
         if audio_submit_key == recording_key:
-            # Inject JS to read from sessionStorage and populate input
+            # First rerun: Read from sessionStorage and populate input, then trigger second rerun
             read_audio_js = f"""
             <script>
             (function() {{
@@ -1458,13 +1458,20 @@ def show_testing_interface():
                                     input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                     input.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     
-                                    // Auto-submit the form
+                                    // Store in session state
+                                    if (window.streamlit && window.streamlit.setComponentValue) {{
+                                        window.streamlit.setComponentValue(audioData);
+                                    }}
+                                    
+                                    // Trigger second rerun to process
                                     setTimeout(() => {{
-                                        const submitBtn = form.querySelector('button[type="submit"]');
-                                        if (submitBtn) {{
-                                            submitBtn.click();
-                                        }}
-                                    }}, 100);
+                                        // Remove audio_submit param and add audio_loaded param
+                                        const url = new URL(window.location.href);
+                                        url.searchParams.delete('audio_submit');
+                                        url.searchParams.set('audio_loaded', '{recording_key}');
+                                        url.searchParams.set('_t', Date.now());
+                                        window.location.href = url.toString();
+                                    }}, 200);
                                     break;
                                 }}
                             }}
@@ -1475,6 +1482,7 @@ def show_testing_interface():
             </script>
             """
             components.html(read_audio_js, height=0)
+            st.info("⏳ Loading audio from recording...")
         
         # If audio was submitted, read from sessionStorage and process IMMEDIATELY
         audio_bytes = None
