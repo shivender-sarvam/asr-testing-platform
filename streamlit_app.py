@@ -1125,17 +1125,27 @@ def show_testing_interface():
                             // Store in sessionStorage (accessible from parent window)
                             sessionStorage.setItem('audio_' + key, base64Audio);
                             
-                            // Trigger Streamlit rerun with URL parameter
-                            // This tells Python to read from sessionStorage
-                            const currentUrl = window.location.href;
-                            const url = new URL(currentUrl);
-                            url.searchParams.set('audio_submit', key);
-                            url.searchParams.set('_t', Date.now()); // Force reload
-                            
-                            // Navigate parent window (we're in iframe)
+                            // Use postMessage to communicate with parent (no navigation needed)
+                            // Parent will detect the message and trigger rerun
                             if (window.parent && window.parent !== window) {{
-                                window.parent.location.href = url.toString();
+                                window.parent.postMessage({{
+                                    type: 'streamlit:audio_submit',
+                                    key: key
+                                }}, '*');
+                                
+                                // Also try to trigger rerun via Streamlit API if available
+                                try {{
+                                    if (window.parent.streamlit && window.parent.streamlit.rerun) {{
+                                        window.parent.streamlit.rerun();
+                                    }}
+                                }} catch(e) {{
+                                    console.log('Streamlit rerun not available, using postMessage');
+                                }}
                             }} else {{
+                                // Not in iframe - use URL param
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('audio_submit', key);
+                                url.searchParams.set('_t', Date.now());
                                 window.location.href = url.toString();
                             }}
                             
@@ -1207,43 +1217,20 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
-            # Add postMessage listener BEFORE rendering recorder (runs in parent window)
+            # Add postMessage listener to handle audio submission from iframe
             postmessage_listener_js = f"""
             <script>
             (function() {{
                 const key = '{recording_key}';
                 window.addEventListener('message', function(event) {{
                     // Only process messages from our iframe
-                    if (event.data && event.data.type === 'streamlit:audio_ready' && event.data.key === key) {{
-                        console.log('Received audio_ready message from iframe');
-                        // Audio is ready in sessionStorage - populate form and submit
-                        const audioData = sessionStorage.getItem('audio_' + key);
-                        if (audioData && audioData.length > 100) {{
-                            const form = document.querySelector('form[data-testid*="stForm"]');
-                            if (form) {{
-                                const inputs = form.querySelectorAll('input[type="text"]');
-                                for (let input of inputs) {{
-                                    const container = input.closest('[data-testid*="stTextInput"]');
-                                    if (container) {{
-                                        const label = container.querySelector('label');
-                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
-                                            input.value = audioData;
-                                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                            
-                                            // Auto-submit form
-                                            setTimeout(() => {{
-                                                const submitBtn = form.querySelector('button[type="submit"]');
-                                                if (submitBtn) {{
-                                                    submitBtn.click();
-                                                }}
-                                            }}, 100);
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
+                    if (event.data && event.data.type === 'streamlit:audio_submit' && event.data.key === key) {{
+                        console.log('Received audio_submit message from iframe');
+                        // Audio is in sessionStorage - trigger rerun with URL param
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('audio_submit', key);
+                        url.searchParams.set('_t', Date.now());
+                        window.location.href = url.toString();
                     }}
                 }});
             }})();
