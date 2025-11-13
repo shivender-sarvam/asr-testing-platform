@@ -1303,6 +1303,50 @@ def show_testing_interface():
         </script>
         """.format(recording_key=recording_key)
         
+            # Add postMessage listener BEFORE rendering recorder (runs in parent window)
+            postmessage_listener_js = f"""
+            <script>
+            (function() {{
+                const key = '{recording_key}';
+                window.addEventListener('message', function(event) {{
+                    // Only process messages from our iframe
+                    if (event.data && event.data.type === 'streamlit:audio_ready' && event.data.key === key) {{
+                        console.log('Received audio_ready message from iframe');
+                        // Audio is ready in sessionStorage - populate form and submit
+                        const audioData = sessionStorage.getItem('audio_' + key);
+                        if (audioData && audioData.length > 100) {{
+                            const form = document.querySelector('form[data-testid*="stForm"]');
+                            if (form) {{
+                                const inputs = form.querySelectorAll('input[type="text"]');
+                                for (let input of inputs) {{
+                                    const container = input.closest('[data-testid*="stTextInput"]');
+                                    if (container) {{
+                                        const label = container.querySelector('label');
+                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                            input.value = audioData;
+                                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                            
+                                            // Auto-submit form
+                                            setTimeout(() => {{
+                                                const submitBtn = form.querySelector('button[type="submit"]');
+                                                if (submitBtn) {{
+                                                    submitBtn.click();
+                                                }}
+                                            }}, 100);
+                                            break;
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }});
+            }})();
+            </script>
+            """
+            components.html(postmessage_listener_js, height=0)
+            
             # Render the audio recorder
             components.html(audio_recorder_html, height=300)
             
