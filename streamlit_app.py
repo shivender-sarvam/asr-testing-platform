@@ -1001,6 +1001,73 @@ def show_testing_interface():
                         window['audioBlob_' + key] = audioBlob;
                         console.log('Audio blob stored, ready for submission');
                         
+                        // CRITICAL: Populate the input IMMEDIATELY when recording stops
+                        // This ensures the input is ready when user clicks form submit button
+                        try {{
+                            const reader = new FileReader();
+                            const base64Promise = new Promise((resolve, reject) => {{
+                                reader.onload = () => {{
+                                    const base64 = reader.result.split(',')[1];
+                                    resolve(base64);
+                                }};
+                                reader.onerror = reject;
+                            }});
+                            
+                            reader.readAsDataURL(audioBlob);
+                            const base64Audio = await base64Promise;
+                            
+                            // Store in sessionStorage immediately
+                            sessionStorage.setItem('audio_' + key, base64Audio);
+                            
+                            // Find and populate the hidden text input
+                            let targetInput = null;
+                            
+                            // Strategy 1: Find by form context
+                            const form = document.querySelector('form[data-testid*="stForm"]');
+                            if (form) {{
+                                const inputs = form.querySelectorAll('input[type="text"]');
+                                for (let input of inputs) {{
+                                    const container = input.closest('[data-testid*="stTextInput"]');
+                                    if (container) {{
+                                        const label = container.querySelector('label');
+                                        if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                            targetInput = input;
+                                            break;
+                                        }}
+                                    }}
+                                }}
+                            }}
+                            
+                            // Strategy 2: Find any hidden text input
+                            if (!targetInput) {{
+                                const allInputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                                for (let input of allInputs) {{
+                                    const container = input.closest('[data-testid*="stTextInput"]');
+                                    if (container) {{
+                                        const label = container.querySelector('label');
+                                        const isHidden = !label || label.style.display === 'none' || 
+                                                       label.textContent === '' || 
+                                                       label.textContent === 'Audio Data';
+                                        if (isHidden) {{
+                                            targetInput = input;
+                                            break;
+                                        }}
+                                    }}
+                                }}
+                            }}
+                            
+                            if (targetInput) {{
+                                targetInput.value = base64Audio;
+                                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                console.log('Audio data populated in input immediately after recording');
+                            }} else {{
+                                console.warn('Could not find target input to populate');
+                            }}
+                        }} catch (error) {{
+                            console.error('Error populating input after recording:', error);
+                        }}
+                        
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
@@ -1189,46 +1256,57 @@ def show_testing_interface():
             submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
             
             if submitted:
-                # Try to get audio from input first, then sessionStorage as fallback
-                audio_data = audio_base64_data
+                # CRITICAL: Read from session state first (where Streamlit stores widget values)
+                audio_data = st.session_state.get(audio_base64_key, '')
                 
-                # Fallback: try to read from sessionStorage if input is empty
+                # Also try the widget value directly as fallback
+                if (not audio_data or len(audio_data) < 100) and audio_base64_data:
+                    audio_data = audio_base64_data
+                
+                # If still empty, try to read from sessionStorage via JavaScript injection
                 if not audio_data or len(audio_data) < 100:
-                    # Store sessionStorage value in a way Python can read it
-                    # We'll use a query param to trigger a rerun with the data
+                    # Inject JS to read from sessionStorage and store in session state
                     read_storage_js = f"""
                     <script>
-                    const audioData = sessionStorage.getItem('audio_{recording_key}');
-                    if (audioData) {{
-                        // Store in a way that persists - use URL param
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('audio_from_storage', audioData.substring(0, 50)); // First 50 chars as identifier
-                        // Store full data in sessionStorage with a flag
-                        sessionStorage.setItem('audio_ready_{recording_key}', 'true');
-                        window.location.href = url.toString();
-                    }}
+                    (function() {{
+                        const audioData = sessionStorage.getItem('audio_{recording_key}');
+                        if (audioData && audioData.length > 100) {{
+                            // Store in Streamlit session state via the input
+                            const input = document.querySelector('input[type="text"][data-baseweb*="input"]');
+                            if (input) {{
+                                input.value = audioData;
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                            // Also try to find by key attribute
+                            const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                            for (let inp of inputs) {{
+                                const container = inp.closest('[data-testid*="stTextInput"]');
+                                if (container) {{
+                                    const label = container.querySelector('label');
+                                    if (!label || label.style.display === 'none' || label.textContent === 'Audio Data') {{
+                                        inp.value = audioData;
+                                        inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        break;
+                                    }}
+                                }}
+                            }}
+                            // Trigger rerun to process
+                            setTimeout(function() {{
+                                if (window.parent && window.parent.streamlit) {{
+                                    window.parent.streamlit.rerun();
+                                }} else {{
+                                    window.location.reload();
+                                }}
+                            }}, 100);
+                        }}
+                    }})();
                     </script>
                     """
                     components.html(read_storage_js, height=0)
-                    # Check sessionStorage flag
-                    if f'audio_ready_{recording_key}' in st.query_params.get('audio_from_storage', ''):
-                        # Read from sessionStorage via another JS injection
-                        get_storage_js = f"""
-                        <script>
-                        const fullData = sessionStorage.getItem('audio_{recording_key}');
-                        if (fullData) {{
-                            // Try to populate input
-                            const input = document.querySelector('input[data-testid*="stTextInput"] input[type="text"]');
-                            if (input) {{
-                                input.value = fullData;
-                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            }}
-                        }}
-                        </script>
-                        """
-                        components.html(get_storage_js, height=0)
-                        # Re-read from session state
-                        audio_data = st.session_state.get(audio_base64_key, '')
+                    # Re-read from session state after JS injection
+                    audio_data = st.session_state.get(audio_base64_key, '')
                 
                 # Process audio if we have it
                 if audio_data and len(audio_data) > 100:
