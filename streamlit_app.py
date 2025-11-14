@@ -386,10 +386,20 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                     
                     # Check if there's an error message in the response
                     if isinstance(result, dict):
-                        error_fields = ['error', 'message', 'detail', 'description', 'status', 'code']
+                        error_fields = ['error', 'message', 'detail', 'description', 'status', 'code', 'status_code', 'error_message', 'error_code']
+                        found_error = False
                         for field in error_fields:
                             if field in result:
-                                st.error(f"⚠️ **Found '{field}' field in response:** `{result[field]}`")
+                                st.error(f"⚠️ **API ERROR in '{field}' field:** `{result[field]}`")
+                                found_error = True
+                        
+                        # Also check ALL fields to see what's actually there
+                        st.markdown("#### 🔍 **ALL FIELDS IN API RESPONSE:**")
+                        for key, value in result.items():
+                            st.code(f"{key}: {value} (type: {type(value).__name__})", language='text')
+                        
+                        if not found_error:
+                            st.warning("⚠️ **No error fields found, but also no transcript. This might be an API issue.**")
                     
                     # Try to find transcript in other possible field names (check nested too)
                     possible_transcript_fields = ['transcript', 'text', 'transcription', 'result', 'output', 'data', 'content', 'message', 'transcribed_text', 'asr_result']
