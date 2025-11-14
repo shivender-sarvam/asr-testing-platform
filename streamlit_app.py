@@ -1117,7 +1117,85 @@ def show_testing_interface():
                         stream.getTracks().forEach(track => track.stop());
                     }};
                     
-                    // Submit button handler - SURESHOT APPROACH: Auto-download file for file_uploader
+                    // CLIENT-SIDE CONVERSION: Convert webm to wav in browser (NO SERVER CONVERSION NEEDED!)
+                    async function convertWebmToWav(webmBlob) {{
+                        return new Promise(async (resolve, reject) => {{
+                            try {{
+                                // Create audio context
+                                const audioContext = new (window.AudioContext || window.webkitAudioContext)({{
+                                    sampleRate: 16000  // API requires 16kHz
+                                }});
+                                
+                                // Decode webm audio
+                                const arrayBuffer = await webmBlob.arrayBuffer();
+                                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                                
+                                // Convert to mono if needed
+                                const numChannels = 1;
+                                const sampleRate = 16000;
+                                const length = audioBuffer.length;
+                                
+                                // Get mono channel data
+                                let channelData;
+                                if (audioBuffer.numberOfChannels === 1) {{
+                                    channelData = audioBuffer.getChannelData(0);
+                                }} else {{
+                                    // Mix down to mono
+                                    const left = audioBuffer.getChannelData(0);
+                                    const right = audioBuffer.getChannelData(1);
+                                    channelData = new Float32Array(length);
+                                    for (let i = 0; i < length; i++) {{
+                                        channelData[i] = (left[i] + right[i]) / 2;
+                                    }}
+                                }}
+                                
+                                // Convert float32 to int16 PCM
+                                const pcmData = new Int16Array(length);
+                                for (let i = 0; i < length; i++) {{
+                                    const s = Math.max(-1, Math.min(1, channelData[i]));
+                                    pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                                }}
+                                
+                                // Create WAV file
+                                const wavBuffer = new ArrayBuffer(44 + pcmData.length * 2);
+                                const view = new DataView(wavBuffer);
+                                
+                                // WAV header
+                                const writeString = (offset, string) => {{
+                                    for (let i = 0; i < string.length; i++) {{
+                                        view.setUint8(offset + i, string.charCodeAt(i));
+                                    }}
+                                }};
+                                
+                                writeString(0, 'RIFF');
+                                view.setUint32(4, 36 + pcmData.length * 2, true);
+                                writeString(8, 'WAVE');
+                                writeString(12, 'fmt ');
+                                view.setUint32(16, 16, true); // fmt chunk size
+                                view.setUint16(20, 1, true);  // audio format (PCM)
+                                view.setUint16(22, numChannels, true);
+                                view.setUint32(24, sampleRate, true);
+                                view.setUint32(28, sampleRate * numChannels * 2, true); // byte rate
+                                view.setUint16(32, numChannels * 2, true); // block align
+                                view.setUint16(34, 16, true); // bits per sample
+                                writeString(36, 'data');
+                                view.setUint32(40, pcmData.length * 2, true);
+                                
+                                // Write PCM data
+                                const pcmView = new Int16Array(wavBuffer, 44);
+                                pcmView.set(pcmData);
+                                
+                                // Create blob
+                                const wavBlob = new Blob([wavBuffer], {{ type: 'audio/wav' }});
+                                resolve(wavBlob);
+                                
+                            }} catch (error) {{
+                                reject(error);
+                            }}
+                        }});
+                    }}
+                    
+                    // Submit button handler - CONVERT TO WAV IN BROWSER!
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1125,40 +1203,41 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Preparing...';
+                        submitBtn.textContent = '⏳ Converting to WAV...';
                         
                         try {{
-                            // SURESHOT: Auto-download the blob as a file
-                            // User will upload it via file_uploader (most reliable method)
-                            const url = URL.createObjectURL(audioBlob);
+                            // CONVERT WEBM TO WAV IN BROWSER (NO SERVER CONVERSION!)
+                            const wavBlob = await convertWebmToWav(audioBlob);
+                            
+                            // Auto-download as WAV file
+                            const url = URL.createObjectURL(wavBlob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `recording_{recording_key}.webm`;
+                            a.download = `recording_{recording_key}.wav`;  // WAV, not webm!
                             document.body.appendChild(a);
                             a.click();
                             document.body.removeChild(a);
                             URL.revokeObjectURL(url);
                             
-                            // Also store in sessionStorage as backup
+                            // Also store WAV in sessionStorage as backup
                             const reader = new FileReader();
                             reader.onload = () => {{
                                 const base64 = reader.result.split(',')[1];
                                 sessionStorage.setItem('audio_' + key, base64);
+                                sessionStorage.setItem('audio_format_' + key, 'wav');  // Mark as WAV
                             }};
-                            reader.readAsDataURL(audioBlob);
+                            reader.readAsDataURL(wavBlob);
                             
                             // Show success message
-                            submitBtn.textContent = '✅ File downloaded! Upload it below';
+                            submitBtn.textContent = '✅ WAV file downloaded! Upload it below';
                             submitBtn.style.background = '#28a745';
                             
                             // Scroll to file uploader section
                             setTimeout(() => {{
-                                // Try to find and scroll to upload section
                                 const uploadSection = document.querySelector('[data-testid*="stFileUploader"]');
                                 if (uploadSection) {{
                                     uploadSection.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
                                 }} else {{
-                                    // Fallback: scroll to any element with "Upload" text
                                     const elements = Array.from(document.querySelectorAll('*'));
                                     for (let el of elements) {{
                                         if (el.textContent && el.textContent.includes('Upload')) {{
@@ -1170,11 +1249,26 @@ def show_testing_interface():
                             }}, 300);
                             
                         }} catch (error) {{
-                            console.error('Error preparing audio:', error);
-                            alert('Error preparing audio: ' + error.message);
-                            submitBtn.disabled = false;
-                            submitBtn.textContent = '📤 Submit Recording';
-                            submitBtn.style.background = '#007bff';
+                            console.error('Error converting audio:', error);
+                            alert('Error converting audio to WAV: ' + error.message + '\\n\\nTrying to download as webm instead...');
+                            
+                            // Fallback: download as webm
+                            try {{
+                                const url = URL.createObjectURL(audioBlob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `recording_{recording_key}.webm`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                                submitBtn.textContent = '⚠️ Downloaded as webm (may need conversion)';
+                            }} catch (fallbackError) {{
+                                alert('Failed to download audio: ' + fallbackError.message);
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = '📤 Submit Recording';
+                                submitBtn.style.background = '#007bff';
+                            }}
                         }}
                     }});
                     
@@ -1443,7 +1537,7 @@ def show_testing_interface():
         st.markdown("### 📤 Upload Audio")
         uploaded_audio = st.file_uploader(
             "Upload your recorded audio",
-            type=['webm', 'wav', 'mp3'],
+            type=['webm', 'wav', 'mp3'],  # WAV is now primary (from browser conversion)
             key=f"audio_upload_{recording_key}",
             help="After recording, click 'Submit Recording' above to download the file, then upload it here"
         )
@@ -1647,16 +1741,17 @@ def show_testing_interface():
             with st.spinner("🔄 Processing audio with ASR..."):
                 try:
                     # Determine audio format
-                    audio_format = 'wav'
-                    conversion_status = "Not needed (already WAV)"
+                    audio_format = 'wav' if uploaded_audio.name.endswith('.wav') else 'webm'
+                    conversion_status = "Not needed (already WAV)" if audio_format == 'wav' else "Conversion required"
                     
                     with debug_expander:
                         st.write("**Step 2: Audio Format Detection**")
-                        st.code(f"File extension: {uploaded_audio.name.split('.')[-1]}\nInitial format: {audio_format}", language='text')
+                        st.code(f"File extension: {uploaded_audio.name.split('.')[-1]}\nDetected format: {audio_format}\n{'✅ Already WAV - no conversion needed!' if audio_format == 'wav' else '⚠️ WebM detected - conversion required'}", language='text')
                     
+                    # Only convert if it's webm (WAV files from browser conversion don't need conversion)
                     if uploaded_audio.name.endswith('.webm'):
-                        # CRITICAL: Flask ALWAYS sends WAV - we must convert too!
-                        # API may not accept webm format
+                        # FALLBACK: If user uploads webm directly (shouldn't happen with browser conversion)
+                        # API may not accept webm format - convert to WAV
                         conversion_success = False
                         
                         # Strategy: Save to temp file first (librosa/pydub work better with files than BytesIO)
