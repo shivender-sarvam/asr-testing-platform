@@ -215,12 +215,12 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
         # Get BCP47 language code
         bcp47_lang = BCP47_CODES.get(language_code.lower(), "hi-IN")
         
-        # Prepare request - use correct format
-        mime_type_for_api = 'audio/wav' if audio_format == 'wav' else 'audio/webm'
-        filename = f'audio.{audio_format}'
-        
+        # Prepare request - EXACTLY match Flask app format
+        # Flask ALWAYS sends 'audio.wav' as filename, even if format is different
+        # Flask ALWAYS sends 'audio/wav' as mime type
+        # This is critical - API might expect this exact format!
         files = {
-            'file': (filename, audio_bytes, mime_type_for_api)
+            'file': ('audio.wav', audio_bytes, 'audio/wav')
         }
         
         data = {
@@ -234,6 +234,12 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
         
         # Debug logging
         st.info(f"🔍 Calling ASR API:\n- URL: {SARVAM_API_URL}\n- Model: {MODEL_NAME}\n- Language: {bcp47_lang}\n- Format: {audio_format}\n- Audio size: {len(audio_bytes)} bytes\n- API Key: {'✅ Set' if api_key else '❌ Missing'}")
+        
+        # CRITICAL: Log exact request format for debugging
+        if debug_expander:
+            with debug_expander:
+                st.write("**Step 5.0: Request Format Verification**")
+                st.code(f"URL: {SARVAM_API_URL}\nMethod: POST\nHeader: api-subscription-key: {'Set' if api_key else 'Missing'}\nFile field: 'file'\nFile name: {filename}\nFile type: {mime_type_for_api}\nFile size: {len(audio_bytes)} bytes\nForm data:\n  - model: {MODEL_NAME}\n  - language_code: {bcp47_lang}", language='text')
         
         if debug_expander:
             with debug_expander:
@@ -338,7 +344,9 @@ def call_sarvam_asr(audio_bytes, language_code, api_key=None, audio_format='wav'
                         st.write("**Step 5.5: Checking for Transcript**")
                         st.code(f"Available fields: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}", language='text')
                 
-                transcript = result.get('transcript', result.get('text', '')).strip()
+                # Flask ONLY checks 'transcript' field - no fallback to 'text'
+                # Match Flask exactly
+                transcript = result.get('transcript', '').strip()
                 
                 if debug_expander:
                     with debug_expander:
