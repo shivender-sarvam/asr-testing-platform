@@ -1213,7 +1213,7 @@ def show_testing_interface():
                         }});
                     }}
                     
-                    // Submit button handler - CONVERT TO WAV IN BROWSER!
+                    // Submit button handler - SEND DIRECTLY TO STREAMLIT (like Flask FormData POST)
                     submitBtn.addEventListener('click', async function() {{
                         if (!audioBlob) {{
                             alert('No recording to submit');
@@ -1221,72 +1221,53 @@ def show_testing_interface():
                         }}
                         
                         submitBtn.disabled = true;
-                        submitBtn.textContent = '⏳ Converting to WAV...';
+                        submitBtn.textContent = '⏳ Processing...';
                         
                         try {{
-                            // CONVERT WEBM TO WAV IN BROWSER (NO SERVER CONVERSION!)
+                            // Convert to WAV in browser (like Flask converts server-side)
                             const wavBlob = await convertWebmToWav(audioBlob);
                             
-                            // Auto-download as WAV file
-                            const url = URL.createObjectURL(wavBlob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `recording_{recording_key}.wav`;  // WAV, not webm!
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            
-                            // Also store WAV in sessionStorage as backup
+                            // Convert to base64 and store in sessionStorage
                             const reader = new FileReader();
                             reader.onload = () => {{
                                 const base64 = reader.result.split(',')[1];
                                 sessionStorage.setItem('audio_' + key, base64);
-                                sessionStorage.setItem('audio_format_' + key, 'wav');  // Mark as WAV
-                            }};
-                            reader.readAsDataURL(wavBlob);
-                            
-                            // Show success message
-                            submitBtn.textContent = '✅ WAV file downloaded! Upload it below';
-                            submitBtn.style.background = '#28a745';
-                            
-                            // Scroll to file uploader section
-                            setTimeout(() => {{
-                                const uploadSection = document.querySelector('[data-testid*="stFileUploader"]');
-                                if (uploadSection) {{
-                                    uploadSection.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                                }} else {{
-                                    const elements = Array.from(document.querySelectorAll('*'));
-                                    for (let el of elements) {{
-                                        if (el.textContent && el.textContent.includes('Upload')) {{
-                                            el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                                            break;
+                                sessionStorage.setItem('audio_format_' + key, 'wav');
+                                
+                                // Find the form input and populate it
+                                const form = document.querySelector('form[data-testid*="stForm"]');
+                                if (form) {{
+                                    const inputs = form.querySelectorAll('input[type="text"]');
+                                    for (let input of inputs) {{
+                                        const container = input.closest('[data-testid*="stTextInput"]');
+                                        if (container) {{
+                                            const label = container.querySelector('label');
+                                            if (!label || label.style.display === 'none' || label.textContent === '' || label.textContent === 'Audio Data') {{
+                                                input.value = base64;
+                                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                                
+                                                // Auto-submit the form (like Flask POST)
+                                                const submitButton = form.querySelector('button[type="submit"]');
+                                                if (submitButton) {{
+                                                    setTimeout(() => {{
+                                                        submitButton.click();
+                                                    }}, 100);
+                                                }}
+                                                break;
+                                            }}
                                         }}
                                     }}
                                 }}
-                            }}, 300);
+                            }};
+                            reader.readAsDataURL(wavBlob);
                             
                         }} catch (error) {{
-                            console.error('Error converting audio:', error);
-                            alert('Error converting audio to WAV: ' + error.message + '\\n\\nTrying to download as webm instead...');
-                            
-                            // Fallback: download as webm
-                            try {{
-                                const url = URL.createObjectURL(audioBlob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `recording_{recording_key}.webm`;
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                URL.revokeObjectURL(url);
-                                submitBtn.textContent = '⚠️ Downloaded as webm (may need conversion)';
-                            }} catch (fallbackError) {{
-                                alert('Failed to download audio: ' + fallbackError.message);
-                                submitBtn.disabled = false;
-                                submitBtn.textContent = '📤 Submit Recording';
-                                submitBtn.style.background = '#007bff';
-                            }}
+                            console.error('Error processing audio:', error);
+                            alert('Error processing audio: ' + error.message);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '📤 Submit Recording';
+                            submitBtn.style.background = '#007bff';
                         }}
                     }});
                     
