@@ -1386,10 +1386,11 @@ def show_testing_interface():
             """
             components.html(read_audio_js, height=0)
             
-            # Submit button
-            submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
+            # Submit button - REMOVED, using file_uploader instead
+            # submitted = st.form_submit_button("📤 Submit & Process", type="primary", use_container_width=True)
             
-            if submitted:
+            # REMOVED FORM SUBMISSION - using file_uploader below instead
+            # if submitted:
                 # Read from session state (populated by JS above)
                 audio_data = st.session_state.get(audio_base64_key, '')
                 
@@ -1531,20 +1532,22 @@ def show_testing_interface():
                 else:
                     st.warning("⚠️ No audio data found. Please record audio first.")
         
-        # SOLUTION 1: Use file_uploader as PRIMARY method (not fallback)
-        # This works because Streamlit reads files directly, no timing issues
+        # SIMPLIFIED: Just use file_uploader - process immediately when file is uploaded
         st.markdown("### 📤 Upload Audio")
+        st.info("💡 **Instructions:** 1) Record audio above, 2) Click 'Submit Recording' to download WAV file, 3) Upload it here")
+        
         uploaded_audio = st.file_uploader(
-            "Upload your recorded audio",
-            type=['webm', 'wav', 'mp3'],  # WAV is now primary (from browser conversion)
+            "Upload your recorded audio (WAV file)",
+            type=['wav'],  # Only WAV (browser converts to WAV)
             key=f"audio_upload_{recording_key}",
-            help="After recording, click 'Submit Recording' above to download the file, then upload it here"
+            help="After recording, click 'Submit Recording' above to download the WAV file, then upload it here"
         )
         
+        # Process IMMEDIATELY when file is uploaded (like Flask processes immediately)
         audio_bytes = None
         if uploaded_audio is not None:
             audio_bytes = uploaded_audio.read()
-            st.success("✅ Audio file received! Processing...")
+            st.success(f"✅ Audio file received! ({len(audio_bytes)} bytes) Processing...")
         
         # CRITICAL: Don't reset audio_bytes if file_uploader already set it!
         # Only try other methods if file_uploader didn't provide audio
